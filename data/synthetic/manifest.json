@@ -1,0 +1,673 @@
+{
+  "generator": "tools/make_samples.py",
+  "seed": 20260908,
+  "frame": [
+    1200,
+    1600
+  ],
+  "jpeg_quality": 85,
+  "opencv": "5.0.0",
+  "pillow": "12.3.0",
+  "layouts": {
+    "a": {
+      "total_y": 704,
+      "tail_y0": 898,
+      "height": 1098
+    },
+    "b": {
+      "total_y": 618,
+      "tail_y0": 839,
+      "height": 1059
+    },
+    "c": {
+      "total_y": 416,
+      "qr_box": [
+        93,
+        616,
+        333,
+        333
+      ],
+      "tail_y0": 971,
+      "height": 1161
+    }
+  },
+  "samples": [
+    {
+      "id": "clean_a",
+      "file": "clean_a.jpg",
+      "base": "a",
+      "defect": "none",
+      "params": {},
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "accept",
+        "rule_id": "accept"
+      },
+      "note": "reference capture of receipt A"
+    },
+    {
+      "id": "clean_b",
+      "file": "clean_b.jpg",
+      "base": "b",
+      "defect": "none",
+      "params": {},
+      "corners": [
+        [
+          332.0,
+          267.3
+        ],
+        [
+          836.3,
+          254.1
+        ],
+        [
+          879.6,
+          1312.3
+        ],
+        [
+          344.2,
+          1326.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1059
+      ],
+      "expected_verdict": {
+        "outcome": "accept",
+        "rule_id": "accept"
+      },
+      "note": "reference capture of receipt B"
+    },
+    {
+      "id": "blur_1",
+      "file": "blur_1.jpg",
+      "base": "a",
+      "defect": "blur_global",
+      "params": {
+        "space": "frame",
+        "sigma": 1.0
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": null,
+      "note": "whole frame blurred; focus must fall monotonically with sigma"
+    },
+    {
+      "id": "blur_2",
+      "file": "blur_2.jpg",
+      "base": "a",
+      "defect": "blur_global",
+      "params": {
+        "space": "frame",
+        "sigma": 2.0
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": null,
+      "note": "whole frame blurred; focus must fall monotonically with sigma"
+    },
+    {
+      "id": "blur_4",
+      "file": "blur_4.jpg",
+      "base": "a",
+      "defect": "blur_global",
+      "params": {
+        "space": "frame",
+        "sigma": 4.0
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "out_of_focus"
+      },
+      "note": "whole frame blurred; focus must fall monotonically with sigma"
+    },
+    {
+      "id": "blur_bottom",
+      "file": "blur_bottom.jpg",
+      "base": "a",
+      "defect": "blur_partial",
+      "params": {
+        "space": "paper",
+        "sigma": 4.0,
+        "from_fraction": 0.6,
+        "from_y": 658
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "out_of_focus"
+      },
+      "note": "bottom 40% of the paper blurred; blur_tiles must sit in that band only"
+    },
+    {
+      "id": "glare_text",
+      "file": "glare_text.jpg",
+      "base": "a",
+      "defect": "glare",
+      "params": {
+        "space": "paper",
+        "centre": [
+          280,
+          714
+        ],
+        "axes": [
+          150,
+          46
+        ],
+        "area_fraction": 0.03797,
+        "over_text": true
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "glare_over_total"
+      },
+      "note": "specular ellipse across the TOTAL line"
+    },
+    {
+      "id": "glare_white",
+      "file": "glare_white.jpg",
+      "base": "a",
+      "defect": "glare",
+      "params": {
+        "space": "paper",
+        "centre": [
+          250,
+          993
+        ],
+        "axes": [
+          120,
+          40
+        ],
+        "area_fraction": 0.02641,
+        "over_text": false
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "accept",
+        "rule_id": "accept"
+      },
+      "note": "specular ellipse on the blank tail; must not trigger a retake"
+    },
+    {
+      "id": "warp",
+      "file": "warp.jpg",
+      "base": "b",
+      "defect": "perspective",
+      "params": {
+        "space": "frame"
+      },
+      "corners": [
+        [
+          250.0,
+          200.0
+        ],
+        [
+          900.0,
+          140.0
+        ],
+        [
+          980.0,
+          1500.0
+        ],
+        [
+          180.0,
+          1420.0
+        ]
+      ],
+      "paper_size": [
+        520,
+        1059
+      ],
+      "expected_verdict": {
+        "outcome": "accept",
+        "rule_id": "accept"
+      },
+      "note": "strong keystone; the detected quad must land on these corners"
+    },
+    {
+      "id": "crop_bottom",
+      "file": "crop_bottom.jpg",
+      "base": "a",
+      "defect": "crop",
+      "params": {
+        "space": "frame",
+        "side": "bottom",
+        "visible_paper_height": 664
+      },
+      "corners": [
+        [
+          349.7,
+          933.3
+        ],
+        [
+          861.8,
+          938.7
+        ],
+        [
+          858.1,
+          2036.7
+        ],
+        [
+          330.4,
+          2031.2
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "bottom_edge_clipped"
+      },
+      "note": "receipt runs off the bottom of the frame just above the TOTAL line"
+    },
+    {
+      "id": "under",
+      "file": "under.jpg",
+      "base": "a",
+      "defect": "exposure",
+      "params": {
+        "space": "frame",
+        "gain": 0.12
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "underexposed"
+      },
+      "note": "whole frame at 12% gain"
+    },
+    {
+      "id": "over",
+      "file": "over.jpg",
+      "base": "a",
+      "defect": "exposure",
+      "params": {
+        "space": "frame",
+        "gain": 1.6
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "retake",
+        "rule_id": "overexposed"
+      },
+      "note": "whole frame at 160% gain; paper saturates"
+    },
+    {
+      "id": "not_doc",
+      "file": "not_doc.jpg",
+      "base": null,
+      "defect": "not_a_document",
+      "params": {},
+      "corners": null,
+      "paper_size": null,
+      "expected_verdict": {
+        "outcome": "escalate",
+        "rule_id": "not_a_document"
+      },
+      "note": "the table with nothing on it"
+    },
+    {
+      "id": "faded",
+      "file": "faded.jpg",
+      "base": "a",
+      "defect": "faded",
+      "params": {
+        "space": "paper",
+        "ink_alpha": 0.08
+      },
+      "corners": [
+        [
+          358.8,
+          247.8
+        ],
+        [
+          868.2,
+          258.5
+        ],
+        [
+          855.6,
+          1356.4
+        ],
+        [
+          325.4,
+          1345.3
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "escalate",
+        "rule_id": "not_a_document"
+      },
+      "note": "thermal paper faded to 8% ink; the quad is found but text coverage is under the floor"
+    },
+    {
+      "id": "two_docs",
+      "file": "two_docs.jpg",
+      "base": "a+b",
+      "defect": "two_documents",
+      "params": {
+        "space": "frame",
+        "second_corners": [
+          [
+            720.0,
+            501.4
+          ],
+          [
+            1005.0,
+            486.4
+          ],
+          [
+            1041.8,
+            1078.3
+          ],
+          [
+            745.2,
+            1093.9
+          ]
+        ]
+      },
+      "corners": [
+        [
+          186.1,
+          487.8
+        ],
+        [
+          471.3,
+          497.7
+        ],
+        [
+          455.7,
+          1112.4
+        ],
+        [
+          158.8,
+          1102.1
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "escalate",
+        "rule_id": "two_documents"
+      },
+      "note": "two receipts side by side; the larger is the primary quad"
+    },
+    {
+      "id": "dup_a",
+      "file": "dup_a.jpg",
+      "base": "a",
+      "defect": "duplicate",
+      "params": {
+        "space": "frame",
+        "duplicate_of": "clean_a"
+      },
+      "corners": [
+        [
+          351.1,
+          250.8
+        ],
+        [
+          850.3,
+          238.6
+        ],
+        [
+          892.3,
+          1324.9
+        ],
+        [
+          362.2,
+          1337.8
+        ]
+      ],
+      "paper_size": [
+        520,
+        1098
+      ],
+      "expected_verdict": {
+        "outcome": "escalate",
+        "rule_id": "suspected_duplicate"
+      },
+      "note": "receipt A re-shot at a different pose; escalates when clean_a's hash is in the batch"
+    },
+    {
+      "id": "qr_soft",
+      "file": "qr_soft.jpg",
+      "base": "c",
+      "defect": "blur_global",
+      "params": {
+        "space": "frame",
+        "sigma": 2.2,
+        "qr_box": [
+          93,
+          616,
+          333,
+          333
+        ]
+      },
+      "corners": [
+        [
+          357.3,
+          212.0
+        ],
+        [
+          866.9,
+          219.1
+        ],
+        [
+          861.1,
+          1380.1
+        ],
+        [
+          330.7,
+          1372.7
+        ]
+      ],
+      "paper_size": [
+        520,
+        1161
+      ],
+      "expected_verdict": {
+        "outcome": "accept",
+        "rule_id": "accept"
+      },
+      "note": "soft enough to trip focus_min_tile, but the fiscal QR still decodes, so no retake"
+    }
+  ]
+}

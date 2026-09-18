@@ -1,0 +1,160 @@
+# Second Look — the committed threshold table.
+#
+# [perception] holds every parameter the eight measurements read (SPEC § 4). The [[rule]]
+# array is the decision cascade of SPEC § 8: its ORDER is the policy, first match wins, and
+# every clause evaluated is written to the verdict's `firings` whether or not it matched.
+# There is no model and no randomness anywhere in this file's path.
+#
+# A clause is {metric, op, value} with op one of <, <=, >, >=, ==, !=, contains. A clause
+# may carry `margin`: rule 9 (`uncertain`) escalates when the metric lies within ± margin
+# of that threshold and no earlier rule claimed it. `combine` is "all" or "any"; a rule
+# with no clauses matches unconditionally (rule 10). Two rules are evaluated by code and
+# say so with `special`: `persistent_defect` needs the would-be verdict of the rest of the
+# cascade, and `uncertain` needs every margin above it.
+
+[perception]
+canonical_page_width = 800
+canny_low = 50
+canny_high = 150
+page_area_floor = 0.08            # a 4-gon under this fraction of the frame is not a page
+focus_grid = [6, 8]                # columns × rows over the rectified page
+focus_tile_ink_min = 5.0           # mean black-hat darkness under which a tile is blank paper
+blur_tile_threshold = 2.0          # Laplacian variance per unit ink under which an inked tile is blurred
+exposure_low_level = 40            # near-black; text on paper this dark is unreadable
+exposure_high_level = 250
+glare_saturation_max = 30
+glare_value_min = 250
+glare_min_area_fraction = 0.002
+glare_max_area_fraction = 0.35     # larger is a blown-out page, which is exposure's call
+text_contrast_min = 0.12           # Weber contrast (ink darkness / paper level) a stroke needs
+text_darkness_min = 12             # absolute darkness floor, so sensor noise is not ink
+text_min_height_px = 6
+text_max_height_px = 90
+text_boxes_cap = 200
+bottom_band_fraction = 0.12
+edge_touch_margin_fraction = 0.01
+duplicate_hamming_threshold = 6
+
+# ---- the cascade -------------------------------------------------------------------------
+
+[[rule]]
+id = "not_a_document"
+outcome = "escalate"
+reason_code = "not_a_document"
+reason_text = "This does not look like a receipt, so a person will take a look."
+hint = "none"
+combine = "any"
+clauses = [
+  { metric = "quad_found", op = "==", value = false },
+  { metric = "text_coverage_fraction", op = "<", value = 0.02, margin = 0.005 },
+]
+
+[[rule]]
+id = "two_documents"
+outcome = "escalate"
+reason_code = "two_documents"
+reason_text = "There seem to be two receipts in the frame. A person will pick the right one."
+hint = "none"
+combine = "all"
+clauses = [
+  { metric = "second_quad_area_fraction", op = ">", value = 0.05, margin = 0.01 },
+]
+
+[[rule]]
+id = "suspected_duplicate"
+outcome = "escalate"
+reason_code = "suspected_duplicate"
+reason_text = "This looks like a receipt already in the batch. A person will decide."
+hint = "none"
+combine = "all"
+clauses = [
+  { metric = "nearest_distance", op = "<=", value = 6, margin = 1 },
+]
+
+[[rule]]
+id = "persistent_defect"
+special = "persistent_defect"
+outcome = "escalate"
+reason_code = "persistent_defect"
+reason_text = "The same problem is still there after two retakes. A person will take it from here."
+hint = "none"
+combine = "all"
+clauses = [
+  { metric = "attempt", op = ">=", value = 3 },
+]
+
+[[rule]]
+id = "bottom_edge_clipped"
+outcome = "retake"
+reason_code = "bottom_edge_clipped"
+reason_text = "The bottom of the receipt is outside the frame. Step back and include the total line."
+hint = "bottom_band"
+combine = "all"
+clauses = [
+  { metric = "edge_touch_sides", op = "contains", value = "bottom" },
+  { metric = "bottom_band_has_text", op = "==", value = true },
+]
+
+[[rule]]
+id = "glare_over_total"
+outcome = "retake"
+reason_code = "glare_over_total"
+reason_text = "Glare is covering the text. Move so the light source is behind you and shoot again."
+hint = "glare_boxes"
+combine = "all"
+clauses = [
+  { metric = "glare_over_text_frac", op = ">", value = 0.15, margin = 0.03 },
+]
+
+[[rule]]
+id = "out_of_focus"
+outcome = "retake"
+reason_code = "out_of_focus"
+reason_text = "Part of the receipt is out of focus. Hold still, tap the receipt to focus, and shoot again."
+hint = "blur_tiles"
+combine = "all"
+clauses = [
+  { metric = "focus_min_tile", op = "<", value = 2.0, margin = 0.75 },
+  { metric = "code_decoded", op = "==", value = false },
+]
+
+[[rule]]
+id = "underexposed"
+outcome = "retake"
+reason_code = "underexposed"
+reason_text = "The photo is too dark to read. Find more light and shoot again."
+hint = "page"
+combine = "all"
+clauses = [
+  { metric = "clipped_low_frac", op = ">", value = 0.25, margin = 0.05 },
+]
+
+[[rule]]
+id = "overexposed"
+outcome = "retake"
+reason_code = "overexposed"
+reason_text = "The photo is washed out. Move out of direct light and shoot again."
+hint = "page"
+combine = "all"
+clauses = [
+  { metric = "clipped_high_frac", op = ">", value = 0.40, margin = 0.05 },
+]
+
+[[rule]]
+id = "uncertain"
+special = "uncertain"
+outcome = "escalate"
+reason_code = "uncertain_band"
+reason_text = "This one is close to the line, so a person will make the call."
+hint = "none"
+combine = "any"
+clauses = []
+
+[[rule]]
+id = "accept"
+outcome = "accept"
+reason_code = "clean"
+reason_text = "Every measurement is comfortably inside its band."
+hint = "none"
+combine = "all"
+clauses = []

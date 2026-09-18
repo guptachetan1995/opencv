@@ -1,0 +1,5 @@
+# Runtime dependency set — exactly the two packages the Lambda image installs (SPEC § 11).
+# Pins are exact: opencv-python 4.14.x also exists on PyPI and a range can resolve backwards
+# into the 4.x line, where warpPerspective's numerics differ.
+opencv-python-headless==5.0.0.93
+numpy==2.5.3

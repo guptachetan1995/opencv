@@ -1,0 +1,105 @@
+%% Second Look — architecture, drawn AS BUILT (not as SPEC § 16 sketched it).
+%% Solid = built and exercised by tests. Dashed = planned, not built; each dashed node
+%% names where it is deferred to. Source of truth: entries/opencv/src, app, deploy.
+flowchart LR
+  classDef built fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111
+  classDef unbuilt fill:#f5f5f5,stroke:#999999,stroke-width:1px,stroke-dasharray: 6 4,color:#555555
+  classDef choke fill:#fff3cd,stroke:#b8860b,stroke-width:3px,color:#111111
+  classDef human fill:#e8f0fe,stroke:#3367d6,stroke-width:2px,color:#111111
+  classDef note fill:#fafafa,stroke:#cccccc,stroke-width:1px,color:#444444
+
+  subgraph CLIENT["Client"]
+    PHONE["Phone or laptop browser"]
+    REVIEW["app/static/review.html — the review lane<br/>Approve button fetches POST /approve/:capture_id"]
+    AGENTLANE["index.html agent lane<br/>NOT BUILT — SPEC § 16A only"]
+  end
+
+  subgraph LOCAL["Local host — make run"]
+    SERVER["app/server.py<br/>stdlib ThreadingHTTPServer, 127.0.0.1:8080<br/>MAX_BODY_BYTES = 4 MB"]
+    SMOKE["app/smoke.py — make smoke"]
+  end
+
+  subgraph AWS["AWS"]
+    FURL["Lambda Function URL<br/>HTTPS, public, auth-type NONE<br/>BLOCKED — account SCP denies lambda:CreateFunction"]
+    LAMBDA["deploy/handler.py<br/>Lambda container image, payload format 2.0<br/>arm64 / Graviton2, 2048 MB, Python 3.13<br/>MAX_BODY_BYTES = 4 MB"]
+    FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — issue #90 —<br/>deploy/handler.py is the interim stand-in"]
+    ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base, digest-pinned"]
+    DEPLOYSH["deploy/build.sh + deploy/deploy.sh<br/>owner-run, no CI"]
+    S3["Amazon S3 private bucket<br/>NOT BUILT — store.py, SPEC § 12"]
+    CW["Amazon CloudWatch Logs<br/>NOT WIRED — SPEC § 9"]
+  end
+
+  subgraph CORE["Agent loop — one chokepoint for agent and human alike"]
+    INVOKE["agent_loop.invoke(tool, args, actor)<br/>HUMAN_VERBS need actor=reviewer<br/>AGENT_TOOLS need actor=agent<br/>every mutation passes here or not at all"]
+    PROC["agent_loop.process_capture<br/>perception → decision → action;<br/>a no-op once state == escalated"]
+    PERC["perception.inspect() — the eight measurements, timed"]
+    MEAS["Measurements — 31 frozen fields<br/>numbers, flags, boxes; no pixels, no decoded text"]
+    POLICY["policy.decide() — 11-rule cascade, first match wins"]
+    VERDICT["Verdict — outcome, rule_id, reason_code, hint_box, firings"]
+    ACCEPT["accept → _mark_accepted → loop.accepted_hashes"]
+    RETAKE["retake → request_recapture(failing_metric, hint_box)"]
+    ESCALATE["escalate → human review queue"]
+    OVERLAY["overlay.py evidence image<br/>NOT BUILT — SPEC § 12"]
+  end
+
+  subgraph CV["OpenCV 5 — opencv-python-headless==5.0.0.93, DNN engine 'new'"]
+    M1["1 · localise + rectify<br/>Canny, findContours, approxPolyDP,<br/>HoughLinesP fallback,<br/>getPerspectiveTransform, warpPerspective"]
+    M2["2 · focus per tile<br/>Laplacian variance over a 6x8 grid"]
+    M3["3 · exposure and contrast<br/>calcHist → clipped_low_frac / clipped_high_frac"]
+    M4["4 · specular glare<br/>cvtColor BGR2HSV threshold,<br/>morphologyEx OPEN+CLOSE,<br/>connectedComponentsWithStats"]
+    M5["5 · text presence and coverage — CLASSICAL<br/>black-hat morphology (MORPH_CLOSE + subtract),<br/>getStructuringElement, connectedComponentsWithStats"]
+    M5DNN["5b · DNN text detector<br/>NOT BUILT — TEXT_DETECTOR='classical',<br/>no weights vendored (models/README.md)"]
+    M6["6 · frame-edge crop<br/>rectified quad vs frame border margin"]
+    M7["7 · QR / barcode<br/>QRCodeDetector, barcode_BarcodeDetector<br/>payload dropped; only code_decoded survives"]
+    M8["8 · duplicate<br/>dHash (resize 9x8) + Hamming vs accepted_hashes"]
+  end
+
+  FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. SPEC § 9."]
+  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the issue or SPEC section it is deferred to.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from SPEC § 16. No AWS COOL service is used."]
+
+  PHONE -->|"POST /inspect, raw image bytes — 4 MB cap; Lambda sync payload cap is 6 MB"| SERVER
+  PHONE -.->|"POST /inspect — 4 MB cap; Lambda sync payload cap is 6 MB"| FURL
+  PHONE --> REVIEW
+  AGENTLANE -.-> SERVER
+  SERVER --> REVIEW
+  REVIEW -->|"Approve — actor=reviewer"| INVOKE
+  SMOKE --> SERVER
+
+  SERVER --> PROC
+  FURL -.-> LAMBDA
+  LAMBDA --> PROC
+  LAMBDA -.-> FUTUREH
+  DEPLOYSH -->|"owner-run, no CI"| ECR
+  ECR --> LAMBDA
+  LAMBDA -.-> S3
+  LAMBDA -.-> CW
+
+  PROC -->|"every step, actor=agent"| INVOKE
+  INVOKE --> PERC
+  PERC --> MEAS
+  MEAS --> POLICY
+  INVOKE --> POLICY
+  POLICY --> VERDICT
+  VERDICT --> ACCEPT
+  VERDICT --> RETAKE
+  VERDICT --> ESCALATE
+  RETAKE -->|"new capture, re-measured"| PROC
+  ACCEPT -->|"seeds the duplicate measurement of later captures"| M8
+  ESCALATE -->|"approve / reject / resolve_duplicate — human only"| INVOKE
+  VERDICT -.-> OVERLAY
+
+  PERC --> M1
+  M1 --> M2
+  M1 --> M3
+  M1 --> M4
+  M1 --> M5
+  M1 --> M6
+  M1 --> M7
+  M1 --> M8
+  M5 -.->|"env-selected alternative, not built"| M5DNN
+
+  class PHONE,REVIEW,SERVER,SMOKE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,M1,M2,M3,M4,M5,M6,M7,M8 built
+  class AGENTLANE,FURL,FUTUREH,S3,CW,OVERLAY,M5DNN unbuilt
+  class INVOKE choke
+  class ESCALATE human
+  class FOOTNOTE,LEGEND note

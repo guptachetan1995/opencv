@@ -1,0 +1,30 @@
+[project]
+name = "secondlook"
+version = "0.1.0"
+description = "Second Look — a receipt-capture inspection desk on OpenCV 5 (OpenCV AI Competition 2026)."
+requires-python = "==3.13.*"
+license = "MIT"
+dependencies = [
+  "opencv-python-headless==5.0.0.93",
+  "numpy==2.5.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "ruff==0.16.6",
+  "Pillow==12.3.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 99
+target-version = "py313"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
