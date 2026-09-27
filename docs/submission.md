@@ -72,7 +72,8 @@ person — who is also the only party who can discard a capture or overturn a ve
   reaches for a human verb or a human reaches for an agent tool. The review page's Approve
   button calls exactly the same function the agent's tools call — there is no second path to
   the accepted state.
-- **AWS**: one Lambda function as a container image on arm64/Graviton2, 2048 MB, Python 3.13,
+- **AWS** (built and tested locally, not deployed: the account available blocks it, see
+  Challenges): one Lambda function as a container image on arm64/Graviton2, 2048 MB, Python 3.13,
   behind a Lambda Function URL. No ALB, no API Gateway, nothing billing while idle. App Runner
   is unavailable (closed to new customers 30 April 2026) and ECS Express Mode was considered
   and rejected for cost and for requiring CI.
