@@ -21,8 +21,8 @@
 <body>
   <h1>Second Look — review queue</h1>
   <p class="lede">
-    Every capture here escalated because the policy could not accept it on its own
-    (SPEC § 3). <strong>Approve</strong> below calls
+    Every capture here escalated because the policy could not accept it on its own;
+    only a person can accept it now. <strong>Approve</strong> below calls
     <code>POST /approve/&lt;capture_id&gt;</code> — the exact same
     <code>invoke("approve", ..., actor="reviewer")</code> call the agent's own tools would
     make with <code>actor="agent"</code> for a tool they're not allowed to call. There is

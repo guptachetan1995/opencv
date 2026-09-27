@@ -1,4 +1,4 @@
-"""deploy/handler.py — the actual Lambda entry point (SPEC §9/§12, #46/#47). This file had
+"""deploy/handler.py — the actual Lambda entry point. This file had
 no dedicated coverage at all before this suite; the fixes below (the /approve size cap and
 the per-request temp-file cleanup) mirror app/server.py's own but are unique code here, so
 they need their own tests rather than relying on app/server.py's suite to stand in for them.

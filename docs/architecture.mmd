@@ -1,6 +1,6 @@
-%% Second Look — architecture, drawn AS BUILT (not as SPEC § 16 sketched it).
+%% Second Look — architecture, drawn AS BUILT (not as the pre-code design sketched it).
 %% Solid = built and exercised by tests. Dashed = planned, not built; each dashed node
-%% names where it is deferred to. Source of truth: entries/opencv/src, app, deploy.
+%% names what it waits on. Source of truth: src/, app/, deploy/.
 flowchart LR
   classDef built fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111
   classDef unbuilt fill:#f5f5f5,stroke:#999999,stroke-width:1px,stroke-dasharray: 6 4,color:#555555
@@ -11,7 +11,7 @@ flowchart LR
   subgraph CLIENT["Client"]
     PHONE["Phone or laptop browser"]
     REVIEW["app/static/review.html — the review lane<br/>Approve button fetches POST /approve/:capture_id"]
-    AGENTLANE["index.html agent lane<br/>NOT BUILT — SPEC § 16A only"]
+    AGENTLANE["index.html agent lane<br/>NOT BUILT — design only, no code"]
   end
 
   subgraph LOCAL["Local host — make run"]
@@ -22,11 +22,11 @@ flowchart LR
   subgraph AWS["AWS"]
     FURL["Lambda Function URL<br/>HTTPS, public, auth-type NONE<br/>BLOCKED — account SCP denies lambda:CreateFunction"]
     LAMBDA["deploy/handler.py<br/>Lambda container image, payload format 2.0<br/>arm64 / Graviton2, 2048 MB, Python 3.13<br/>MAX_BODY_BYTES = 4 MB"]
-    FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — issue #90 —<br/>deploy/handler.py is the interim stand-in"]
-    ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base, digest-pinned"]
+    FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — planned module —<br/>deploy/handler.py is the interim stand-in"]
+    ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base"]
     DEPLOYSH["deploy/build.sh + deploy/deploy.sh<br/>owner-run, no CI"]
-    S3["Amazon S3 private bucket<br/>NOT BUILT — store.py, SPEC § 12"]
-    CW["Amazon CloudWatch Logs<br/>NOT WIRED — SPEC § 9"]
+    S3["Amazon S3 private bucket<br/>NOT BUILT — waits on store.py"]
+    CW["Amazon CloudWatch Logs<br/>NOT WIRED — no per-trace-entry log lines"]
   end
 
   subgraph CORE["Agent loop — one chokepoint for agent and human alike"]
@@ -39,7 +39,7 @@ flowchart LR
     ACCEPT["accept → _mark_accepted → loop.accepted_hashes"]
     RETAKE["retake → request_recapture(failing_metric, hint_box)"]
     ESCALATE["escalate → human review queue"]
-    OVERLAY["overlay.py evidence image<br/>NOT BUILT — SPEC § 12"]
+    OVERLAY["overlay.py evidence image<br/>NOT BUILT — planned module"]
   end
 
   subgraph CV["OpenCV 5 — opencv-python-headless==5.0.0.93, DNN engine 'new'"]
@@ -54,8 +54,8 @@ flowchart LR
     M8["8 · duplicate<br/>dHash (resize 9x8) + Hamming vs accepted_hashes"]
   end
 
-  FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. SPEC § 9."]
-  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the issue or SPEC section it is deferred to.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from SPEC § 16. No AWS COOL service is used."]
+  FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. See report.md § 5."]
+  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the module or step it waits on.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from the pre-code design. No AWS COOL service is used."]
 
   PHONE -->|"POST /inspect, raw image bytes — 4 MB cap; Lambda sync payload cap is 6 MB"| SERVER
   PHONE -.->|"POST /inspect — 4 MB cap; Lambda sync payload cap is 6 MB"| FURL
@@ -96,7 +96,7 @@ flowchart LR
   M1 --> M6
   M1 --> M7
   M1 --> M8
-  M5 -.->|"env-selected alternative, not built"| M5DNN
+  M5 -.->|"unbuilt alternative"| M5DNN
 
   class PHONE,REVIEW,SERVER,SMOKE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,M1,M2,M3,M4,M5,M6,M7,M8 built
   class AGENTLANE,FURL,FUTUREH,S3,CW,OVERLAY,M5DNN unbuilt

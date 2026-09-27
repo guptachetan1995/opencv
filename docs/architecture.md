@@ -13,16 +13,16 @@ drawn in full, because they are the entry's whole claim.
 ## Legend
 
 **Solid box or solid edge = built and exercised by tests. Dashed box or dashed edge =
-planned, not built.** Every dashed node names the issue or the SPEC section it is deferred
-to, so a reader can tell at a glance what runs today from what is on paper. The one heavily
-outlined box, `agent_loop.invoke(tool, args, actor)`, is the single chokepoint: every arrow
-from either entry point, from `process_capture`, and from the review page's Approve button
-goes *into* it, and none route around it.
+planned, not built.** Every dashed node names what it waits on (a planned module, or the
+AWS account block), so a reader can tell at a glance what runs today from what is on paper.
+The one heavily outlined box, `agent_loop.invoke(tool, args, actor)`, is the single
+chokepoint: every arrow from either entry point, from `process_capture`, and from the review
+page's Approve button goes *into* it, and none route around it.
 
 ```mermaid
-%% Second Look — architecture, drawn AS BUILT (not as SPEC § 16 sketched it).
+%% Second Look — architecture, drawn AS BUILT (not as the pre-code design sketched it).
 %% Solid = built and exercised by tests. Dashed = planned, not built; each dashed node
-%% names where it is deferred to. Source of truth: entries/opencv/src, app, deploy.
+%% names what it waits on. Source of truth: src/, app/, deploy/.
 flowchart LR
   classDef built fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111
   classDef unbuilt fill:#f5f5f5,stroke:#999999,stroke-width:1px,stroke-dasharray: 6 4,color:#555555
@@ -33,7 +33,7 @@ flowchart LR
   subgraph CLIENT["Client"]
     PHONE["Phone or laptop browser"]
     REVIEW["app/static/review.html — the review lane<br/>Approve button fetches POST /approve/:capture_id"]
-    AGENTLANE["index.html agent lane<br/>NOT BUILT — SPEC § 16A only"]
+    AGENTLANE["index.html agent lane<br/>NOT BUILT — design only, no code"]
   end
 
   subgraph LOCAL["Local host — make run"]
@@ -44,11 +44,11 @@ flowchart LR
   subgraph AWS["AWS"]
     FURL["Lambda Function URL<br/>HTTPS, public, auth-type NONE<br/>BLOCKED — account SCP denies lambda:CreateFunction"]
     LAMBDA["deploy/handler.py<br/>Lambda container image, payload format 2.0<br/>arm64 / Graviton2, 2048 MB, Python 3.13<br/>MAX_BODY_BYTES = 4 MB"]
-    FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — issue #90 —<br/>deploy/handler.py is the interim stand-in"]
-    ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base, digest-pinned"]
+    FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — planned module —<br/>deploy/handler.py is the interim stand-in"]
+    ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base"]
     DEPLOYSH["deploy/build.sh + deploy/deploy.sh<br/>owner-run, no CI"]
-    S3["Amazon S3 private bucket<br/>NOT BUILT — store.py, SPEC § 12"]
-    CW["Amazon CloudWatch Logs<br/>NOT WIRED — SPEC § 9"]
+    S3["Amazon S3 private bucket<br/>NOT BUILT — waits on store.py"]
+    CW["Amazon CloudWatch Logs<br/>NOT WIRED — no per-trace-entry log lines"]
   end
 
   subgraph CORE["Agent loop — one chokepoint for agent and human alike"]
@@ -61,7 +61,7 @@ flowchart LR
     ACCEPT["accept → _mark_accepted → loop.accepted_hashes"]
     RETAKE["retake → request_recapture(failing_metric, hint_box)"]
     ESCALATE["escalate → human review queue"]
-    OVERLAY["overlay.py evidence image<br/>NOT BUILT — SPEC § 12"]
+    OVERLAY["overlay.py evidence image<br/>NOT BUILT — planned module"]
   end
 
   subgraph CV["OpenCV 5 — opencv-python-headless==5.0.0.93, DNN engine 'new'"]
@@ -76,8 +76,8 @@ flowchart LR
     M8["8 · duplicate<br/>dHash (resize 9x8) + Hamming vs accepted_hashes"]
   end
 
-  FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. SPEC § 9."]
-  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the issue or SPEC section it is deferred to.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from SPEC § 16. No AWS COOL service is used."]
+  FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. See report.md § 5."]
+  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the module or step it waits on.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from the pre-code design. No AWS COOL service is used."]
 
   PHONE -->|"POST /inspect, raw image bytes — 4 MB cap; Lambda sync payload cap is 6 MB"| SERVER
   PHONE -.->|"POST /inspect — 4 MB cap; Lambda sync payload cap is 6 MB"| FURL
@@ -118,7 +118,7 @@ flowchart LR
   M1 --> M6
   M1 --> M7
   M1 --> M8
-  M5 -.->|"env-selected alternative, not built"| M5DNN
+  M5 -.->|"unbuilt alternative"| M5DNN
 
   class PHONE,REVIEW,SERVER,SMOKE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,M1,M2,M3,M4,M5,M6,M7,M8 built
   class AGENTLANE,FURL,FUTUREH,S3,CW,OVERLAY,M5DNN unbuilt
@@ -138,8 +138,8 @@ points: `MAX_BODY_BYTES = 4 * 1024 * 1024` in `app/server.py` and again in
 decoded from a truncated buffer.
 
 The built UI is the **review lane only** — `app/static/review.html`, whose Approve button
-`fetch()`es `POST /approve/:capture_id`. SPEC § 16A also sketched an *agent lane* in an
-`index.html`; that lane is not built, so it is drawn dashed.
+`fetch()`es `POST /approve/:capture_id`. The pre-code design also sketched an *agent lane*
+in an `index.html`; that lane is not built, so it is drawn dashed.
 
 ### Local host and AWS — two entry points, one loop
 
@@ -149,7 +149,7 @@ its own decision logic; both translate a request into `process_capture` or
 `invoke("approve", …, actor="reviewer")` and translate the result back.
 
 The Lambda function is a **container image** on **arm64 / Graviton2**, 2048 MB, Python 3.13,
-from the digest-pinned `public.ecr.aws/lambda/python:3.13` base, fed in from **Amazon ECR**
+from the `public.ecr.aws/lambda/python:3.13` base, fed in from **Amazon ECR**
 by `deploy/build.sh` and `deploy/deploy.sh` — drawn as a hand-run arrow labelled
 **"owner-run, no CI"**, because this repo forbids CI and deploying is an owner action.
 
@@ -159,8 +159,8 @@ endpoint was never created — deployment was attempted and blocked by the only 
 AWS account's Free Plan Service Control Policy, not left undone. See
 [`deploy.md`](./deploy.md) for the attempt log.
 
-**Amazon S3** and **Amazon CloudWatch Logs** appear dashed: SPEC § 9 and § 12 describe a
-private bucket via `store.py` and one structured log line per trace entry, and neither is
+**Amazon S3** and **Amazon CloudWatch Logs** appear dashed: the design calls for a private
+bucket behind a `store.py` module and one structured log line per trace entry, and neither is
 built. Drawing them solid would claim persistence and observability this entry does not have.
 
 ### The chokepoint
@@ -180,34 +180,34 @@ rectified page, which is why blur and glare are reported *by location on the rec
 than as one score for the photograph.
 
 Measurement 5 is marked **CLASSICAL**: `TEXT_DETECTOR = "classical"` in `perception.py`, and
-`models/README.md` vendors no weights. The DNN text path SPEC § 16A wanted on the diagram
+`models/README.md` vendors no weights. The DNN text path the design wanted on the diagram
 (`dnn.TextDetectionModel_DB`) is drawn dashed as the unbuilt alternative. `dnn_engine_name()`
 still reports OpenCV 5's `new` engine, and that string is recorded in every `Measurements`.
 
-## Where this diverges from SPEC § 16
+## Where this diverges from the pre-code design
 
-SPEC § 16 was written before any code existed, as a node-and-edge list for a later goal.
-Seven of the things it prescribes were never built, and drawing them solid would have
-misrepresented the system — which is itself a stated rejection ground for this competition
-("Misrepresents capabilities, results, benchmarks, or the role of human review"). The
-diagram above is therefore drawn **as built**, and the divergences are recorded here rather
-than hidden:
+The diagram's node-and-edge list was written before any code existed, as part of the entry's
+design notes (not published in this repository). Seven of the things it prescribes were
+never built, and drawing them solid would have misrepresented the system — which is itself a
+stated rejection ground for this competition ("Misrepresents capabilities, results,
+benchmarks, or the role of human review"). The diagram above is therefore drawn **as
+built**, and the divergences are recorded here rather than hidden:
 
-| SPEC § 16 says | As built |
+| The pre-code design says | As built |
 |---|---|
 | `apply.py` is the single chokepoint | The chokepoint is `agent_loop.invoke(tool, args, actor)`. `apply.py` does not exist. |
-| Side arrows to a private **Amazon S3** bucket | Not built (`store.py`, SPEC § 12) — drawn dashed. |
+| Side arrows to a private **Amazon S3** bucket | Not built (it waits on a `store.py` module) — drawn dashed. |
 | Side arrows to **Amazon CloudWatch Logs**, one line per trace entry | Not wired — drawn dashed. The trace exists in memory and over `GET /trace/:id`. |
 | Measurement 5 marked `dnn.TextDetectionModel_DB` | The built path is classical morphology; `TEXT_DETECTOR = "classical"`, no weights vendored. The DNN path is drawn dashed. |
 | An `index.html` with an **agent lane** and a review lane | Only the review lane exists, as `app/static/review.html`. The agent lane is drawn dashed. |
-| An evidence-overlay image on every verdict | `overlay.py` is not built (SPEC § 12) — drawn dashed. |
+| An evidence-overlay image on every verdict | `overlay.py` is not built — drawn dashed. |
 | All **six** human-only verbs in the review lane | Three are built (`approve`, `reject`, `resolve_duplicate`); `override`, `discard` and `close_batch` are not, and `agent_loop.py`'s own docstring says so. See [`agent-workflow.md`](./agent-workflow.md). |
 
-One more divergence in the other direction: SPEC § 16A drew a single AWS entry point, and
+One more divergence in the other direction: the design drew a single AWS entry point, and
 the entry as built has two — the local `app/server.py` and the Lambda `deploy/handler.py` —
-so the diagram carries a local band that § 16 did not anticipate. Both are adapters over one
+so the diagram carries a local band the design did not anticipate. Both are adapters over one
 loop, which is why the chokepoint appears once and not twice.
 
-**SPEC § 16 is deliberately left unrevised.** It is the pre-implementation sketch, kept as
-the record of what was intended; this file is the record of what was built, and the
-difference between the two is stated above rather than quietly edited away.
+**The design sketch is deliberately left unrevised.** It is the record of what was
+intended; this file is the record of what was built, and the difference between the two is
+stated above rather than quietly edited away.

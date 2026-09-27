@@ -1,4 +1,4 @@
-"""The HTTP serving layer (#63): the issue's own Definition of Done, each as one test.
+"""The HTTP serving layer: each promised behaviour as one test.
 
 Every test drives a real `SecondLookServer` on an ephemeral local port with the standard
 library's `urllib.request` as the client — no new dev dependency, no network beyond
@@ -78,7 +78,7 @@ def test_health(live_server: str) -> None:
     assert body == {"status": "ok"}
 
 
-# ---- the issue's own line: inspect -> escalate -> approve -> resume ------------------
+# ---- inspect -> escalate -> approve -> resume --------------------------------------------
 
 
 def test_inspect_escalate_approve_resume_trace(live_server: str) -> None:

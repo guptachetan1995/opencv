@@ -1,4 +1,4 @@
-"""The agent loop (SPEC § 3, § 5, § 7): the issue's own Definition of Done, each as one
+"""The agent loop: each promised behaviour of the chokepoint and the loop driver as one
 test. Everything here reads a committed synthetic JPEG and calls `decide()`/`inspect_file()`
 locally — no network, no credential, no model, deterministic policy only.
 """
@@ -37,8 +37,8 @@ def _successor_of(capture, action: str = "request_recapture") -> str:
 
 
 def test_agent_tools_and_human_verbs_are_disjoint():
-    """CLAUDE.md's "the human-only verbs are never registered on the agent" made
-    checkable at the tool-registry level, not just documented."""
+    """The human-only verbs are never registered on the agent — made checkable at the
+    tool-registry level, not just documented."""
     assert not (set(AGENT_TOOLS) & set(HUMAN_VERBS))
     assert not (set(AGENT_TOOLS) & set(READ_TOOLS))
     assert set(AGENT_TOOLS) | set(HUMAN_VERBS) | set(READ_TOOLS) == {
@@ -102,13 +102,13 @@ def test_different_visual_results_take_different_tool_paths():
     assert glare.verdict.rule_id == "glare_over_total"
 
 
-# ---- SPEC § 7's headline beat: a different rule fires on a different metric --------------
+# ---- the headline beat: a different rule fires on a different metric ---------------------
 
 
 def test_retake_chain_fires_a_different_rule_on_a_different_metric():
     """glare_text.jpg and crop_bottom.jpg are both base "a" in the committed manifest —
-    the same receipt, two different defects — so this reproduces SPEC's own demo script
-    beat (glare fixed, crop found) from real committed images, not a hand-built fixture."""
+    the same receipt, two different defects — so this reproduces the demo's qualifying beat
+    (glare fixed, crop found) from real committed images, not a hand-built fixture."""
     loop = AgentLoop()
     first_id = loop.open_capture(DATA / "glare_text.jpg")
     first = process_capture(first_id, loop=loop)
@@ -305,13 +305,13 @@ def test_trace_chain_reconstructs_the_spec_demo_shape():
         assert row["caused_by"] is not None
         assert row["caused_by"] < row["seq"]
     # The successor's first entry (compare_captures) is caused by the parent's
-    # request_recapture entry — the cross-capture link SPEC § 7's table draws.
+    # request_recapture entry — the cross-capture link the demo trace prints.
     request_seq = next(r["seq"] for r in chain if r["action"] == "request_recapture")
     compare_seq = next(r["seq"] for r in chain if r["action"] == "compare_captures")
     assert chain[compare_seq - 1]["caused_by"] == request_seq
 
 
-# ---- "the demo script from SPEC.md runs end to end" ---------------------------------------
+# ---- the demo script runs end to end -----------------------------------------------------
 
 
 def test_demo_script_runs_end_to_end():

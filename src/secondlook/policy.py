@@ -1,4 +1,4 @@
-"""The decision layer: ``decide(measurements, policy) -> Verdict`` (SPEC § 8).
+"""The decision layer: ``decide(measurements, policy) -> Verdict``.
 
 A pure function over the ordered rule cascade in ``policy.toml``. First match wins; every
 clause evaluated is recorded as a ``RuleFiring`` so the trace explains the verdict without

@@ -1,7 +1,7 @@
-# Lambda entry point for Second Look (#46). Base image and CMD form match SPEC §11's
-# stack pin exactly. `docker build` never executes CMD, so this builds and is verified
-# today even though deploy/handler.py's `handler.handler` hasn't been exercised through a
-# real Lambda Runtime API invocation yet — that happens once #47 deploys it for real.
+# Lambda entry point for Second Look. The base image matches the README's Stack section.
+# `docker build` never executes CMD, so this builds and is verified today even
+# though deploy/handler.py's `handler.handler` hasn't been exercised through a real Lambda
+# Runtime API invocation yet — that needs a real deploy (see docs/deploy.md).
 FROM public.ecr.aws/lambda/python:3.13
 
 COPY requirements.txt requirements.lock ${LAMBDA_TASK_ROOT}/

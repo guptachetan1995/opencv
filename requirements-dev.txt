@@ -1,5 +1,5 @@
 # Development set: runtime pins plus the test runner, linter and the sample-set renderer.
-# Pillow is dev-only and is never installed into the Lambda image (SPEC § 11).
+# Pillow is dev-only and is never installed into the Lambda image.
 -r requirements.txt
 pytest==9.1.1
 ruff==0.16.6

@@ -1,7 +1,7 @@
 # Models
 
-**No weights are vendored.** SPEC § 10's rule: nothing ships until its licence is read and
-recorded here with the source URL and a sha256.
+**No weights are vendored.** The rule for this entry: nothing ships until its licence is
+read and recorded here with the source URL and a sha256.
 
 Measurement 5 (text presence and coverage) therefore runs the **classical path** by
 default — plain OpenCV, no weights: a black-hat transform against the local paper level

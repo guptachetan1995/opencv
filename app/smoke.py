@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke command for the HTTP serving layer (#63).
+"""Smoke command for the HTTP serving layer.
 
 Starts its own copy of the server, waits for it to become healthy, hits ``GET /health``
 and one ``POST /inspect`` against a real committed dataset image, prints the decision, and

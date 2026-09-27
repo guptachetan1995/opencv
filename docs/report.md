@@ -119,14 +119,14 @@ The review page proves the point at runtime: `app/static/review.html`'s Approve 
 `invoke("approve", …, actor="reviewer")` — the identical function the agent's own tools call,
 refused to the agent by the guard above.
 
-**The diagrams are drawn as built, not as SPEC § 16 sketched them** before any code existed:
-solid means built and exercised by tests, dashed means planned and not built, and each dashed
-node names the issue or SPEC section it is deferred to.
-[`architecture.md`](./architecture.md#where-this-diverges-from-spec--16) lists all seven
-divergences (chief among them: the chokepoint is `agent_loop.invoke()`, not the separate
-apply-module § 16 imagined; S3, CloudWatch, the evidence overlay, the DNN text path and the UI's agent lane
-are unbuilt). Overstating what exists is a documented rejection ground for this competition,
-so the corrections are recorded rather than smoothed over.
+**The diagrams are drawn as built, not as the design sketched them** before any code
+existed: solid means built and exercised by tests, dashed means planned and not built, and
+each dashed node names what it waits on.
+[`architecture.md`](./architecture.md#where-this-diverges-from-the-pre-code-design) lists all
+seven divergences (chief among them: the chokepoint is `agent_loop.invoke()`, not the separate
+apply-module the design imagined; S3, CloudWatch, the evidence overlay, the DNN text path and
+the UI's agent lane are unbuilt). Overstating what exists is a documented rejection ground for
+this competition, so the corrections are recorded rather than smoothed over.
 
 **No AWS COOL service is used by this entry**, so nothing COOL appears on the architecture
 diagram; the requirement's "where relevant" clause is not relevant here, and saying so
@@ -162,8 +162,8 @@ location on the receipt rather than as one score for the photograph.
 Two honest notes about measurement 5. **The DNN text path is not built.**
 `perception.TEXT_DETECTOR` is the literal string `"classical"`, `models/README.md` vendors no
 weights, and every `Measurements` record carries `text_detector` so any report states which
-path produced it. SPEC § 16A wanted `dnn.TextDetectionModel_DB` on the diagram; it is drawn
-dashed as the unbuilt alternative instead of being claimed.
+path produced it. The pre-code design wanted `dnn.TextDetectionModel_DB` on the diagram; it is
+drawn dashed as the unbuilt alternative instead of being claimed.
 
 The OpenCV output is not a display artefact — it is the input to the next decision.
 `glare_over_text_frac` (not `glare_area_fraction`) is what separates "glare on white space,
@@ -175,8 +175,8 @@ See [`agent-workflow.md`](./agent-workflow.md#the-qualifying-beat).
 
 **Surface:** one AWS Lambda function, packaged as a **container image**, on **arm64
 (Graviton2)**, 2048 MB, Python 3.13, behind a **Lambda Function URL**. No Application Load
-Balancer, no API Gateway. The base image is `public.ecr.aws/lambda/python:3.13`, digest-pinned
-in `deploy/Dockerfile`; the image is pushed to **Amazon ECR** and the function points at the
+Balancer, no API Gateway. The base image is `public.ecr.aws/lambda/python:3.13`
+(`deploy/Dockerfile`); the image is pushed to **Amazon ECR** and the function points at the
 tag. Memory is set above the 1,769 MB point where Lambda allocates a full vCPU, because this
 pipeline is CPU-bound.
 
@@ -187,7 +187,9 @@ so it is unavailable rather than merely inadvisable. Amazon ECS Express Mode was
 and rejected: its documented path provisions an Application Load Balancer plus at least one
 always-running Fargate task, which bills continuously at zero traffic through the whole
 judging window, and its documented continuous-deployment path is GitHub Actions, which this
-repository forbids. Lambda bills nothing while idle. The reasoning is in SPEC § 9.
+repository forbids. Lambda bills nothing while idle, and its free tier — "one million
+requests and 400,000 GB-seconds per month", per <https://aws.amazon.com/lambda/pricing/> —
+covers a demo, an evaluation run and a judging window.
 
 **Four steps**, with the exact commands in [`deploy.md`](./deploy.md):
 
@@ -208,8 +210,8 @@ aws lambda update-function-code --function-name "$FUNCTION_NAME" \
   --image-uri "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:PREVIOUS_TAG"
 ```
 
-**Deploying is an owner-only action (#47), and it was attempted — twice — and blocked.**
-No goal in this repository runs `deploy.sh`; the owner ran it personally on 2026-09-17
+**Deploying is an owner-only action, and it was attempted — twice — and blocked.**
+No automation in this repository runs `deploy.sh`; the owner ran it personally on 2026-09-17
 against the only AWS account available for this submission. `ecr:CreateRepository` was
 denied by an explicit Service Control Policy on that account's AWS Organization. A second
 attempt ruled out "it's specific to container images": a Lambda `.zip` package was sized
@@ -222,7 +224,7 @@ The account is a "Project" under AWS's Free Plan (Builder ID) product — a cura
 guardrailed tier whose Organization-level policy the account holder cannot see or edit
 from inside the account itself. Lifting it requires either AWS's irreversible "activate
 advanced features" step (which itself needs a paid upgrade first, and would restructure
-the whole organization that also hosts `alexa-plus`'s live EC2 deployment) or a separate,
+the whole organization, which also hosts another project's live deployment) or a separate,
 unrestricted AWS account. Neither was available: no spare email for a new account, no
 budget for the upgrade. Rather than paper over this, it's reported here plainly — the
 same standard this report holds every other limitation to. `deploy.sh`, `deploy/handler.py`
@@ -238,7 +240,7 @@ chokepoint the demo and the test suite use.
 Reproduce it with:
 
 ```sh
-cd entries/opencv
+# from the repository root
 make setup
 .venv/bin/python -m eval.run_eval
 ```
@@ -258,7 +260,7 @@ classical text detector.
 | Escalate rate | 4/17 (23.5%) |
 | Escalation precision | 4/4 (100.0%) — **with the caveat below** |
 | Retake convergence | **5/6 (83.3%)** — sequences reaching `accept` within two retakes |
-| Approval latency (simulated) | p50 55.0 ms, max 55.0 ms — **not a human number**; see below |
+| Approval latency (simulated) | about 55 ms, p50 and max (the exact value moves by fractions of a millisecond per run) — **not a human number**; see below |
 
 Per-defect detection is **100.0%** on all eleven classes present in the set: `blur_global`
 (n=2), `blur_partial` (1), `crop` (1), `duplicate` (1), `exposure` (2), `faded` (1), `glare`
@@ -339,7 +341,7 @@ rejection ground for this competition.
 Finally, scope: state is in memory. `store.py` (S3) and CloudWatch wiring are specified and
 unbuilt, so a Lambda cold start loses the batch, and concurrent executions do not share it.
 `src/secondlook/handler.py` is likewise unbuilt — `deploy/handler.py` is the working interim
-entry point (issue #90).
+entry point.
 
 ## 8. Responsible use
 
@@ -348,7 +350,8 @@ Receipts carry names, card last-four digits, addresses and locations, so:
 - **No pixel data and no decoded text is ever stored.** `Measurements` and `Verdict` are
   frozen dataclasses of numbers, flags, box coordinates and rule identifiers. A QR payload is
   dropped inside the metric that read it; only the boolean `code_decoded` survives. This is a
-  schema-level guarantee (SPEC § 6), not a logging convention.
+  schema-level guarantee (`src/secondlook/schema.py`, asserted by `tests/test_schema.py`),
+  not a logging convention.
 - **Nothing is ever sent anywhere.** No email, no accounting integration, no payment, no
   third-party API. The pipeline has no network call in it at all.
 - **The irreversible decisions are human-only, and the guard in § 3 enforces it** — not by
@@ -358,9 +361,10 @@ Receipts carry names, card last-four digits, addresses and locations, so:
 - **This system judges capture quality, not the truthfulness of a claim.** It makes no
   assessment of a person. It does not read the receipt's contents, identify a merchant, or
   score anyone's behaviour.
-- **Data licences are recorded** (SPEC § 10): the primary set is synthetic and ours
-  (`data/synthetic/LICENSE`, MIT); any real photographs are owner-shot or CORD under CC BY 4.0
-  with attribution. The entry itself is MIT (`entries/opencv/LICENSE`).
+- **Data licences are recorded**: the primary set is synthetic and ours
+  (`data/synthetic/LICENSE`, MIT); no real photographs are shipped, and any added later would
+  be owner-shot or CORD under CC BY 4.0 with attribution. No model weights are vendored
+  (`models/README.md`). The entry itself is MIT ([`LICENSE`](../LICENSE)).
 - **Known-undetected cases are reported as undetected** — the moiré case above is the
   example — because overstating capability is a stated rejection ground.
 
@@ -370,7 +374,7 @@ That is a real exposure and is stated openly rather than buried: the function ho
 synthetic demo captures, keeps nothing beyond one execution environment's lifetime, writes
 nothing outside `/tmp`, has no credentials to steal, and caps request bodies at 4 MB. The
 scope that makes it acceptable is exactly the demo scope; a production deployment would put
-IAM auth or a CloudFront signed path in front of it, and SPEC § 9's S3 upgrade path assumes a
+IAM auth or a CloudFront signed path in front of it, and the planned S3 store assumes a
 private bucket with Block Public Access on.
 
 ---
@@ -385,7 +389,7 @@ For the six general criteria:
 | Innovation | 20% | § 1's framing (latency-to-knowing, not recognition accuracy) and § 4's use of `glare_over_text_frac` and `code_decoded` as *decision* inputs |
 | Real-world impact | 20% | § 1 and § 2 — the cost asymmetry that makes silent accepts the expensive error |
 | User experience | 10% | § 2, plus `app/static/review.html`'s single-button review lane and the per-capture instruction with a hint box |
-| Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, scripted in `docs/video-script.md` and recorded as **owner action #51** |
+| Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, <https://youtu.be/zOfV23uB8Ts>, scripted in [`video-script.md`](./video-script.md) |
 | Cloud delivery, reproducibility, responsible operation | 10% | § 5 — deployment is built, tested, and **blocked at submission time** by the only available account's Free Plan guardrail (not deployed; see § 5 for the attempt log), rollback documented regardless; the hash-pinned locks; § 8 |
 
 For the five Agentic Vision Award rubric lines:
@@ -396,4 +400,4 @@ For the five Agentic Vision Award rubric lines:
 | Orchestration and appropriate autonomy | 25% | § 3, the 11-rule cascade in § 6's set-up, and `persistent_defect` stopping the loop after two retakes |
 | Task effectiveness and evaluation | 20% | § 6 — 15/15 task success, 0/15 silent accepts, 5/6 retake convergence |
 | Failure handling, observability, security, human control | 15% | § 7 (four named failure cases), the trace (`GET /trace/:id`, `caused_by` chain), § 8 |
-| User experience, documentation, and demonstration | 10% | § 2 and this report; the **demonstration** evidence is `tools/run_demo.py`'s printed trace, backed by the scripted submission video (`docs/video-script.md`, **owner action #51**) |
+| User experience, documentation, and demonstration | 10% | § 2 and this report; the **demonstration** evidence is `tools/run_demo.py`'s printed trace, backed by the submission video, <https://youtu.be/zOfV23uB8Ts> |

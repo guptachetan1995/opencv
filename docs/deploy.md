@@ -1,10 +1,9 @@
 # Deploying Second Look
 
-Second Look ships as a single Lambda container image behind a Lambda Function URL
-(SPEC §9): arm64, no ALB, nothing billing while idle, upgrading to S3-backed capture
-storage later. **Deploying is a human-only action** (tracked as #47) — this document is
-the runbook a person follows; nothing in this repo's automation runs any of these
-commands for you.
+Second Look ships as a single Lambda container image behind a Lambda Function URL:
+arm64, no ALB, nothing billing while idle, upgrading to S3-backed capture storage later.
+**Deploying is a human-only action** — this document is the runbook a person follows;
+nothing in this repo's automation runs any of these commands for you.
 
 **Status: attempted 2026-09-17, blocked — not a code or config problem.** The owner's
 only available AWS account is a "Project" under AWS's Free Plan (Builder ID) product,
@@ -40,7 +39,7 @@ this; it is an account-tier guardrail, not a size or dependency problem.
 
 Lifting it needs either activating AWS's "advanced features" on this account (per
 AWS's own docs: irreversible, requires a paid upgrade first, and restructures the whole
-organization that also hosts `alexa-plus`'s live EC2 deployment) or a separate,
+organization, which also hosts another project's live deployment) or a separate,
 unrestricted AWS account. Neither was available for this submission — no spare email
 for a new account, and no budget for the upgrade. The owner decided to document this
 honestly rather than pursue either. **This runbook is otherwise correct and complete**:
@@ -51,7 +50,7 @@ unmodified.
 
 - **Build step**: Docker (Engine or Desktop) with a version that supports
   `docker build --platform`. Nothing else — no AWS account, no credentials.
-- **Deploy step** (owner-run only, #47): AWS CLI v2 and an AWS account with the
+- **Deploy step** (owner-run only): AWS CLI v2 and an AWS account with the
   permissions in [`deploy/iam-policy.json`](../deploy/iam-policy.json).
 
 Run this locally, with no AWS credentials configured, to confirm the build step's
@@ -88,7 +87,7 @@ None of these are ever hard-coded in any script — every one is read as `${VAR:
 | `IMAGE_TAG` | `build.sh`, `deploy.sh` | `secondlook-lambda:local` (`build.sh`) / build timestamp (`deploy.sh`) |
 | `PLATFORM` | `build.sh` | `linux/arm64` |
 | `TIMEOUT_SECONDS` | `deploy.sh` | `30` |
-| `MEMORY_MB` | `deploy.sh` | `2048` (SPEC §9: above the 1,769 MB point where Lambda allocates a full vCPU — this pipeline is CPU-bound) |
+| `MEMORY_MB` | `deploy.sh` | `2048` (above the 1,769 MB point where Lambda allocates a full vCPU — this pipeline is CPU-bound) |
 
 If you override `FUNCTION_NAME` or `ECR_REPOSITORY` from their defaults, update the
 matching resource ARNs in [`deploy/iam-policy.json`](../deploy/iam-policy.json) to
@@ -98,7 +97,7 @@ match — the policy's ARNs are pinned to the default names (`secondlook`,
 ## Step 1 — Build (local, no AWS credential needed)
 
 ```
-cd entries/opencv
+# from the repository root
 IMAGE_TAG=secondlook-lambda:local bash deploy/build.sh
 ```
 
@@ -168,7 +167,7 @@ Docker-free, AWS-free: calls `handler.handler()` in-process against the committe
 `data/synthetic/clean_a.jpg` sample.
 
 ```
-cd entries/opencv
+# from the repository root, after make setup
 .venv/bin/python deploy/smoke_local.py
 ```
 
@@ -211,13 +210,13 @@ the function's code, without recreating the ECR repo, execution role, or Functio
 curl -s "$FUNCTION_URL/health"
 # {"status": "ok"}
 
-curl -s --data-binary @entries/opencv/data/synthetic/clean_a.jpg "$FUNCTION_URL/inspect"
+curl -s --data-binary @data/synthetic/clean_a.jpg "$FUNCTION_URL/inspect"
 # a verdict JSON, same shape as Step 2's captured output
 ```
 
 **Warning**: concurrent requests during a demo can land on different, independently
 started Lambda execution environments, each with its own in-memory `AgentLoop` — no
-shared store exists yet (SPEC §9's `store.py` is unbuilt). A `GET /pending` right after
+shared store exists yet (the S3-backed `store.py` is not built). A `GET /pending` right after
 a `POST /inspect` is **not** guaranteed to see it if a different warm environment
 handles the second request. Verify sequentially, one environment at a time, until
 `store.py` lands.
@@ -241,7 +240,8 @@ here.)
 ## Cost
 
 Function URLs cost nothing beyond the Lambda invocation itself — no ALB, no API
-Gateway. At demo-scale traffic this stays inside AWS's Lambda Free Tier (SPEC §9).
+Gateway. At demo-scale traffic this stays inside AWS's Lambda free tier ("one million
+requests and 400,000 GB-seconds per month", from <https://aws.amazon.com/lambda/pricing/>).
 The Function URL is created with `--auth-type NONE` (public, unauthenticated) so
 judges can hit it directly without sharing AWS credentials — a deliberate,
 documented tradeoff, not an oversight. The handler's existing 4 MB payload guard
@@ -251,11 +251,11 @@ alarm is a named follow-up, not built here.
 ## Known limitations
 
 - **In-memory state**: `AgentLoop` lives only for one warm Lambda execution
-  environment's lifetime. No cross-invocation persistence exists until SPEC §9's
-  `store.py` (S3-backed) is built.
-- **Cold start**: unmeasured until a real deploy; SPEC estimates a few seconds cold,
-  well under half a second warm.
-- **`deploy/handler.py` is an interim stand-in** for SPEC §12's reserved
+  environment's lifetime. No cross-invocation persistence exists until the planned
+  S3-backed `store.py` is built.
+- **Cold start**: unmeasured until a real deploy; the design estimate for a roughly
+  300–400 MB OpenCV container image is a few seconds cold, well under half a second warm.
+- **`deploy/handler.py` is an interim stand-in** for a planned
   `src/secondlook/handler.py`, which doesn't exist yet. When that module is built,
   its routes fold in from `deploy/handler.py` and `deploy/Dockerfile`'s `COPY`/`CMD`
-  move to reference it, in the same PR.
+  move to reference it, in the same change.

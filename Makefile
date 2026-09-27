@@ -1,4 +1,4 @@
-# Every target runs from a fresh clone. The interpreter is pinned to 3.13 (SPEC § 11); pyenv
+# Every target runs from a fresh clone. The interpreter is pinned to 3.13; pyenv
 # picks it up from .python-version, otherwise pass PY=/path/to/python3.13.
 PY ?= python3.13
 VENV := .venv
@@ -34,7 +34,7 @@ samples: setup
 verify:
 	bash verify.sh
 
-# Local dev server (#63) — binds 127.0.0.1:8080 (PORT overrides); Ctrl+C to stop.
+# Local dev server — binds 127.0.0.1:8080 (PORT overrides); Ctrl+C to stop.
 run: setup
 	$(PYTHON) app/server.py
 

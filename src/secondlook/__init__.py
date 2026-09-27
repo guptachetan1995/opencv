@@ -1,9 +1,9 @@
 """Second Look — receipt-capture inspection on OpenCV 5.
 
-Public surface of the pipeline core: ``inspect`` (the eight measurements, SPEC § 4),
-``decide`` (the deterministic cascade, SPEC § 8), the structured records they exchange
-(SPEC § 6), and the agent loop that wraps them as tools behind a single ``invoke``
-chokepoint (SPEC § 3, § 5, § 7).
+Public surface of the pipeline core: ``inspect`` (the eight OpenCV 5 measurements),
+``decide`` (the deterministic rule cascade in ``policy.toml``), the structured records they
+exchange (``schema.py``), and the agent loop that wraps them as tools behind a single
+``invoke`` chokepoint (``agent_loop.py``).
 """
 
 from secondlook.agent_loop import AgentLoop, Capture, invoke, process_capture

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Lambda container image locally. No AWS call, no credential needed — this is
-# the one step #46 itself may execute for real (see docs/deploy.md). deploy.sh calls this
+# the deploy step that runs without an AWS account (see docs/deploy.md). deploy.sh calls this
 # same script before it pushes, so the build path proven here is the one actually shipped.
 set -euo pipefail
 

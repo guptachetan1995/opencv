@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Render the synthetic receipt set (SPEC § 10, primary set) from a fixed seed.
+"""Render the synthetic receipt set (the primary sample set) from a fixed seed.
 
 Pillow draws three receipt papers; OpenCV applies every defect with known parameters and
 warps each paper onto a textured table frame at ground-truth corners; the result is saved
-as JPEG q85 at 1200×1600 — the size and quality the phone client posts (SPEC § 9). Because
+as JPEG q85 at 1200×1600 — the size and quality the phone client is meant to post. Because
 the defect is applied here, ``manifest.json`` carries exact ground truth for every sample:
 which defect, where, how much, and the verdict the policy is expected to reach.
 

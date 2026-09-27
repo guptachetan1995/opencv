@@ -1,4 +1,4 @@
-"""SPEC § 13 — Version: a 4.x wheel fails the suite immediately rather than producing
+"""Version: a 4.x wheel fails the suite immediately rather than producing
 quietly different numbers, and the DNN engine in use is recorded in the record."""
 
 from __future__ import annotations

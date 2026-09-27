@@ -1,4 +1,4 @@
-"""SPEC § 13 — Metrics: property assertions with tolerances against the synthetic set's
+"""Metrics: property assertions with tolerances against the synthetic set's
 ground truth. There are no stored pixel baselines anywhere in this suite, because OpenCV
 5's warping numerics differ from 4.x and a 4.x-era baseline would lie in either direction."""
 

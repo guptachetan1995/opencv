@@ -1,5 +1,5 @@
 """The structured-result schema: regions, quality flags and confidences, with the type
-contract SPEC § 6 promises — no pixel data and no decoded text, ever."""
+contract the README promises — no pixel data and no decoded text, ever."""
 
 from __future__ import annotations
 

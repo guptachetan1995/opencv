@@ -1,14 +1,14 @@
 # Second Look — the committed threshold table.
 #
-# [perception] holds every parameter the eight measurements read (SPEC § 4). The [[rule]]
-# array is the decision cascade of SPEC § 8: its ORDER is the policy, first match wins, and
+# [perception] holds every parameter the eight measurements read. The [[rule]] array is
+# the decision cascade: its ORDER is the policy, first match wins, and
 # every clause evaluated is written to the verdict's `firings` whether or not it matched.
 # There is no model and no randomness anywhere in this file's path.
 #
 # A clause is {metric, op, value} with op one of <, <=, >, >=, ==, !=, contains. A clause
-# may carry `margin`: rule 9 (`uncertain`) escalates when the metric lies within ± margin
+# may carry `margin`: rule 10 (`uncertain`) escalates when the metric lies within ± margin
 # of that threshold and no earlier rule claimed it. `combine` is "all" or "any"; a rule
-# with no clauses matches unconditionally (rule 10). Two rules are evaluated by code and
+# with no clauses matches unconditionally (rule 11, `accept`). Two rules are evaluated by code and
 # say so with `special`: `persistent_defect` needs the would-be verdict of the rest of the
 # cascade, and `uncertain` needs every margin above it.
 

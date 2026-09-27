@@ -1,4 +1,4 @@
-"""Orchestrates the eight measurements into one ``Measurements`` record (SPEC § 4).
+"""Orchestrates the eight measurements into one ``Measurements`` record.
 
 Rectification runs first; every later measurement reads the rectified page, which is why
 blur and glare are reported by location on the receipt rather than as one score for the
@@ -17,7 +17,7 @@ from secondlook import metrics
 from secondlook.policy import Policy, load_policy
 from secondlook.schema import Measurements
 
-TEXT_DETECTOR = "classical"  # the DNN path is the env-selected optional enhancement (SPEC § 10)
+TEXT_DETECTOR = "classical"  # the DNN text-detector path is not built; no weights are vendored
 
 # A generous ceiling on decoded pixel count, not compressed byte size: the HTTP layer's
 # MAX_BODY_BYTES already caps the upload, but a small, highly-compressed JPEG can still

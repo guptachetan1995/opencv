@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Deploys Second Look's Lambda container to AWS. OWNER-RUN ONLY (#47) — deploying is a
-# human-only action per CLAUDE.md; no goal, including the one that wrote this file, runs
-# this script. Safe to re-run: every step checks before it creates.
+# Deploys Second Look's Lambda container to AWS. OWNER-RUN ONLY — deploying is a
+# human-only action; no automation in this repository runs this script.
+# Safe to re-run: every step checks before it creates.
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
@@ -31,7 +31,7 @@ IMAGE_TAG="${ecr_uri}:${IMAGE_TAG}" bash "${DEPLOY_DIR}/build.sh"
 docker push "${ecr_uri}:${IMAGE_TAG}"
 
 # --- Execution role (create or update; CloudWatch Logs only, no S3 yet) ------------
-# S3 permissions are deferred until store.py lands (SPEC §9) — a documented decision,
+# S3 permissions are deferred until store.py lands — a documented decision,
 # not an oversight: today's handler only ever touches /tmp.
 trust_policy='{
   "Version": "2012-10-17",

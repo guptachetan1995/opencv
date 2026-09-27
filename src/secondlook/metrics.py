@@ -1,4 +1,4 @@
-"""The eight measurements of SPEC § 4, one pure function each. No state, no store, no I/O.
+"""The eight measurements, one pure function each. No state, no store, no I/O.
 
 Images are BGR ``uint8`` arrays as ``cv2.imread`` returns them. Every function returns plain
 Python numbers, bools, strings and lists so the record that stores them carries no numpy

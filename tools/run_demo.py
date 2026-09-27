@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run SPEC § 7's demo script against the committed synthetic set and print the trace.
+"""Run the demo script against the committed synthetic set and print the trace.
 
 Three beats, each against a real image already in `data/synthetic/`:
 
@@ -9,8 +9,7 @@ Three beats, each against a real image already in `data/synthetic/`:
    beat, drawn as a line in `docs/agent-workflow.md`: OpenCV's output chose the next call.
 2. `clean_a.jpg` and `clean_b.jpg` are accepted first, seeding the batch's accepted hashes.
 3. `dup_a.jpg` escalates as a suspected duplicate of `clean_a.jpg`; a simulated reviewer
-   clears the duplicate and approves it, the human-approval wait-then-resume this goal
-   exists to demonstrate.
+   clears the duplicate and approves it: the human-approval wait-then-resume.
 
     python tools/run_demo.py
 
@@ -89,7 +88,7 @@ def main() -> int:
     print(f"reviewer resolves + approves -> {resolved.state}")
     _print_trace(batch_loop, dup_id, "escalation, resolved and approved")
 
-    print("\nsecond look demo: all beats reached their SPEC § 7 verdict.")
+    print("\nsecond look demo: all beats reached their expected verdict.")
     return 0
 
 

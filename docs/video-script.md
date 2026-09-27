@@ -1,23 +1,29 @@
 # Second Look — demo video script and shot list
 
-This is the word-for-word script and shot list for the submission video. **The owner records,
-uploads and submits; this repository never records, uploads or publishes anything.** Total
+This is the word-for-word script and shot list for the submission video. **The video was
+produced from this script and the owner uploaded it; this repository never records, uploads or
+publishes anything.** Total
 runtime is **4:28 (268 s)**, against a hard limit of five minutes. Every claim narrated below
 was executed against the locally running app before this file was written, and the output
 quoted in each beat's "On screen you should see" block is the real terminal output of that
 run — not a reconstruction.
+
+The published video is <https://youtu.be/zOfV23uB8Ts>. The sections below are the historical
+production notes, written when the take was planned as a live screen recording with a camera
+segment for beat 2; beat 2 shipped as a title card instead. Every command below runs from the
+repository root.
 
 ---
 
 ## 1. The five-minute rule and the budget
 
 The rules cap the video at **five minutes — 300 s** (`docs/submission.md`'s submission-artifacts
-table: "**no more than five minutes**"). Over it, the entry is not judged. The goal this script
-answers asks for **10 % headroom** on top: 300 × 0.10 = 30 s, so the working ceiling is
+table: "**no more than five minutes**"). Over it, the entry is not judged. This script targets
+**10 % headroom** on top: 300 × 0.10 = 30 s, so the working ceiling is
 300 − 30 = **270 s = 4:30**.
 
 **Chosen total: 4:28 = 268 s.** That is 2 s under the 4:30 ceiling and 32 s under the 5:00 limit
-— **(300 − 268) ÷ 300 ≈ 10.7 % headroom**, which clears the 10 % requirement.
+— **(300 − 268) ÷ 300 ≈ 10.7 % headroom**, which clears the 10 % target.
 
 ### A beat's duration is speech **plus** action, never speech alone
 
@@ -94,8 +100,8 @@ for. **No beat here is optional; cutting one for time breaks a rule rather than 
 | Terminal font | large enough that `0.9211` is legible at the delivered resolution | Beat 1's whole claim is one number on screen |
 | Not on screen | any other tab, notification, editor, or this file | The take is Terminal B, the browser, the diagram, and the owner |
 
-**Recording is a human action.** This repo prepares the script; the owner records the take,
-uploads it, and pastes the link into the Devpost form.
+**This repo prepares the script only.** The published take was produced from it, and the owner
+uploaded the finished file.
 
 ---
 
@@ -106,7 +112,7 @@ Two terminals and one browser window, all set up **before** the recorder starts.
 **Terminal A** — the server. Left running, untouched, for the whole take:
 
 ```sh
-cd entries/opencv
+cd opencv    # the repository root
 make setup
 make run
 # second look serving on http://127.0.0.1:8080 (Ctrl+C to stop)
@@ -115,7 +121,7 @@ make run
 **Terminal B** — the driver, the only terminal on camera:
 
 ```sh
-cd entries/opencv
+cd opencv    # the repository root
 curl -s http://127.0.0.1:8080/health     # off camera; expect {"status": "ok"}
 curl -s http://127.0.0.1:8080/pending    # off camera; expect []  — proves the process is clean
 clear
@@ -228,8 +234,8 @@ captures were told to retake. **The skipped ids are real, and beat 3 points at t
 ## 5. The script
 
 Every beat below has the same five parts, in the same order: **Shot**, **Type this**, **On
-screen you should see**, **Narration**, **Do not say**. Terminal B is already in
-`entries/opencv`, so the commands are written as they are recalled.
+screen you should see**, **Narration**, **Do not say**. Terminal B is already in the
+repository root, so the commands are written as they are recalled.
 
 ### Beat 1 — Hook: a bad capture, measured, answered (0:00–0:36) · 36 s
 
@@ -287,11 +293,9 @@ says.
 **Budget.** 46 spoken words = 18.4 s speech · 3 s action (a beat of silence either side of the
 talking-head cut) · **1.6 s margin** in a 23 s beat.
 
-**Shot.** Produced as `bin/video/`'s other beats are: a static title card
-(`bin/video/out/opencv/frames/beat2-team.html`) — entry name, hackathon and track, byline, and the
-framing line — held for the beat, narrated over. No camera segment; the owner's part of video
-production stays limited to uploading the finished file, per the standing team practice for every
-entry so far.
+**Shot.** A static title card rendered from an HTML frame — entry name, hackathon and track,
+byline, and the framing line — held for the beat, narrated over. No camera segment; the owner's
+part of video production stays limited to uploading the finished file.
 
 **Type this:** nothing. This beat is the title card and the voice.
 
@@ -299,7 +303,7 @@ entry so far.
 "Chetan Gupta — solo entry" · the framing quote.
 
 **Narration** (46 spoken words · 18.4 s) — read verbatim, name included. The name is the repo's
-own byline, `entries/opencv/LICENSE` line 3, `Copyright (c) 2026 Chetan Gupta`:
+own byline, `LICENSE` line 3, `Copyright (c) 2026 Chetan Gupta`:
 
 > I'm Chetan Gupta. Second Look is a solo entry for the OpenCV AI Competition 2026, Agentic
 > Vision track. The expensive thing here isn't OCR — it's the latency between a bad capture and
@@ -374,7 +378,8 @@ and the rule id is legible on screen anyway:
 > them are retake slots the agent already opened.
 
 **Do not say.** Nothing about a drop zone, an evidence overlay, a verdict panel, an agent lane,
-or side-by-side rectified pages. `SPEC.md` § 7 describes those; **none of them are built.**
+or side-by-side rectified pages. The pre-code demo design described those; **none of them are
+built.**
 
 ### Beat 4 — The trace: the measurement chose the next call (1:45–2:35) · 50 s
 
@@ -432,7 +437,7 @@ seq  actor    action             inputs -> outputs (caused_by)
 > instruction was not scripted. A different rule produced it, because the image measured
 > differently.
 
-**Do not say.** Do not read `SPEC.md` § 7's illustrative numbers (`0.34`, `hint_box
+**Do not say.** Do not read the pre-code demo design's illustrative numbers (`0.34`, `hint_box
 [412, 880, 760, 96]`) — they **do not match the shipped code**. Only the numbers on screen.
 
 ### Beat 5 — The human gate (2:35–3:19) · 44 s
@@ -586,7 +591,7 @@ attached, exactly as written above.
 | 1 | Sample order | `clean_a.jpg` posted first makes `glare_text.jpg` return escalate / `suspected_duplicate` at `nearest_distance = 4`. The hook beat is destroyed. | Defects (`glare_text`, `crop_bottom`) **before** `clean_a`. |
 | 2 | Wrong escalation sample | `dup_a.jpg` cannot be approved over HTTP — HTTP 409, and `resolve_duplicate` has no route. | Use `not_doc.jpg` for the approval beat. |
 | 3 | Dark mode | `review.html` hardcodes `color: #1a1a1a` with no body background; in a dark-scheme viewer it renders dark-on-dark and looks broken. | Browser **and** OS in light mode before recording. |
-| 4 | `SPEC.md` § 7 | Its demo script is aspirational — drop zone, evidence overlay, verdict panel, agent lane, side-by-side pages, **none built** — and its numbers are illustrative. | Narrate only what is on screen; use the real numbers. |
+| 4 | The pre-code demo design | Its demo script is aspirational — drop zone, evidence overlay, verdict panel, agent lane, side-by-side pages, **none built** — and its numbers are illustrative. | Narrate only what is on screen; use the real numbers. |
 | 5 | No live endpoint | Deploy was attempted and is **blocked** by the only available AWS account's Free Plan Service Control Policy (`docs/deploy.md`), not merely unfinished. | Say "runs locally" / "built and smoke-tested locally". Never claim a deployed URL. If asked, the honest line is "deployment is blocked by an account restriction, documented in `docs/deploy.md`", not "not done yet". |
 | 6 | Uncaveated metrics | Escalation precision is trivially 100 %; approval latency is simulated. | Caveat the first; do not speak the second. |
 | 7 | `curl -w` into a JSON pipe | `-w` writes after the body on stdout, so the selector dies with `JSONDecodeError: Extra data: line 2 column 1`. | Use `-w '%{stderr}…'` so the timing goes to stderr and stdout stays pure JSON. |
@@ -741,11 +746,14 @@ to the per-beat blocks in section 5; if the two ever disagree, section 5 is the 
 
 ## 10. Owner checklist before hitting Record
 
+Historical, like the rest of this file: written for the planned live take. The published video
+is linked at the top.
+
 - [ ] OS **and** browser in **light mode** (trap 3)
 - [ ] Terminal B sized to at least **210 columns × 30 rows**, font large enough that `0.9211`
       is legible at the delivery resolution
 - [ ] Notifications silenced; no other tab, window or editor visible
-- [ ] `cd entries/opencv && make setup` completed
+- [ ] `make setup` completed in the repository root
 - [ ] All **seven** on-camera commands from section 4 run once off camera so they are in shell
       history, then `clear` (trap 8)
 - [ ] **After** pre-loading history, `make run` **restarted** so the take begins at `c_001`
@@ -758,5 +766,3 @@ to the per-beat blocks in section 5; if the two ever disagree, section 5 is the 
 - [ ] Record the take, following section 5 top to bottom — four `/inspect` POSTs, in order, and
       **no others** (trap 1, rule 3 of section 4)
 - [ ] Play the take back and check the total is at or under **4:30**, and certainly under 5:00
-- [ ] Upload public or unlisted, then paste the link into `docs/submission.md`'s Demo video row
-      and into the Devpost form — **owner action, both**

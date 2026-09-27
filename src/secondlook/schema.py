@@ -1,13 +1,13 @@
-"""The structured records the pipeline emits (SPEC § 6).
+"""The structured records the pipeline emits.
 
 Every field of ``Measurements`` is a number, a bool, a short enum string, a list of boxes or
 a list of points. No pixel data and no decoded text is ever stored: a QR's payload is
 dropped inside the metric that read it, and only ``code_decoded`` survives.
 
 Coordinate spaces: ``quad`` is the one frame-space region (pixels of the posted image).
-Every other box is in rectified-page pixels, whose extent is ``page_shape``. The overlay
-goal maps page boxes back onto the frame with the homography it rebuilds from ``quad`` and
-``page_shape``; nothing here needs the matrix.
+Every other box is in rectified-page pixels, whose extent is ``page_shape``. The planned
+evidence overlay (not built) maps page boxes back onto the frame with the homography it
+rebuilds from ``quad`` and ``page_shape``; nothing here needs the matrix.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ Point = list[int]  # [x, y]
 
 Outcome = Literal["accept", "retake", "escalate"]
 
-# The issue's three words, mapped onto the SPEC's field names. test_schema.py asserts each
-# group's type contract; policy.py reads none of these, it reads fields by name.
+# Regions, flags and confidences, mapped onto the record's field names. test_schema.py
+# asserts each group's type contract; policy.py reads none of these, it reads fields by name.
 REGION_FIELDS: tuple[str, ...] = ("quad", "blur_tiles", "glare_boxes", "text_boxes")
 FLAG_FIELDS: tuple[str, ...] = (
     "quad_found",
@@ -43,7 +43,7 @@ CONFIDENCE_FIELDS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class Measurements:
-    """One record per ``inspect`` call. Field order follows SPEC § 4's measurement order."""
+    """One record per ``inspect`` call. Field order follows the measurement order 1-8."""
 
     image_shape: list[int]
     page_shape: list[int]
@@ -132,7 +132,7 @@ Actor = Literal["agent", "reviewer"]  # `actor` is the field the human gate is a
 class TraceEntry:
     """One append-only row of a capture's trace. ``caused_by`` is the ``seq`` of the entry
     whose output chose this action — the field that turns the trace from a log into
-    evidence that a measurement chose the next call (SPEC § 6)."""
+    evidence that a measurement chose the next call."""
 
     seq: int
     at: str

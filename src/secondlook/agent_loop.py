@@ -1,21 +1,19 @@
-"""The agent loop: perception -> decision -> action (SPEC § 3, § 5, § 7).
+"""The agent loop: perception -> decision -> action.
 
-Wraps #44's ``inspect()`` and ``decide()`` as the SPEC § 5 agent tools and human verbs,
-dispatched through a single chokepoint, ``invoke(tool, args, actor)`` — same shape as
-`entries/call-e/src/invoke.js`. Every tool call and every human verb mutates a
-``Capture`` only by passing through ``invoke``; ``process_capture`` (the loop driver) never
-touches a ``Capture`` directly, and neither does anything else in this module.
+Wraps ``inspect()`` and ``decide()`` as the agent tools and human verbs listed in the
+README, dispatched through a single chokepoint, ``invoke(tool, args, actor)``. Every tool
+call and every human verb mutates a ``Capture`` only by passing through ``invoke``;
+``process_capture`` (the loop driver) never touches a ``Capture`` directly, and neither
+does anything else in this module.
 
-This is an in-memory precursor to SPEC § 12's future ``apply.py`` / ``store.py`` — the
-serving layer is explicitly out of scope for this goal. When that layer lands, it folds
-this module's ``invoke`` into ``apply.py`` rather than keeping two chokepoints; see SPEC
-§ 12's file layout comment.
+This is an in-memory precursor to a planned ``apply.py`` / ``store.py`` pair (S3-backed
+persistence, not built). When that layer lands, it folds this module's ``invoke`` into
+``apply.py`` rather than keeping two chokepoints.
 
-**Not implemented here:** ``override`` and ``discard`` (SPEC's human-only verbs that
-overturn a verdict or delete a capture) and ``close_batch`` — the demo script and this
-goal's Definition of Done need only ``approve``, ``reject`` and ``resolve_duplicate`` to
-show a real wait-for-approval-then-resume; adding the rest now would be scope the issue
-did not ask for.
+**Not implemented here:** ``override`` and ``discard`` (the human-only verbs that would
+overturn a verdict or delete a capture) and ``close_batch``. The demo needs only
+``approve``, ``reject`` and ``resolve_duplicate`` to show a real
+wait-for-approval-then-resume.
 """
 
 from __future__ import annotations
@@ -33,8 +31,8 @@ from secondlook.schema import Measurements, TraceEntry, Verdict
 
 State = str  # "received" | "measured" | "awaiting_retake" | "escalated" | "accepted" | "rejected"
 
-# SPEC § 5's split, enforced at the chokepoint rather than merely documented (CLAUDE.md's
-# "the human-only verbs are never registered on the agent" design watch, made checkable).
+# The agent/human split, enforced at the chokepoint rather than merely documented: the
+# human-only verbs are never registered as agent tools, and tests assert it.
 AGENT_TOOLS = (
     "inspect_capture",
     "decide_capture",
@@ -45,8 +43,8 @@ AGENT_TOOLS = (
 HUMAN_VERBS = ("approve", "reject", "resolve_duplicate")
 READ_TOOLS = ("get_capture", "get_trace")
 
-# The one metric each retake-triggering rule reads (SPEC § 5's `request_recapture` names
-# "the one metric that failed"; `compare_captures` re-measures only that metric).
+# The one metric each retake-triggering rule reads (`request_recapture` names the one
+# metric that failed; `compare_captures` reports only that metric).
 _FAILING_METRIC = {
     "bottom_edge_clipped": "edge_touch_sides",
     "glare_over_total": "glare_over_text_frac",
@@ -78,8 +76,8 @@ class Capture:
     review_reason: str | None = None
     duplicate_resolved: bool = False
     # (parent_capture_id, parent's local trace seq for the request_recapture that opened
-    # this slot) — lets `AgentLoop.trace_chain` draw the cross-capture causal arrow SPEC
-    # § 7's demo table shows without merging two captures' trace lists into one.
+    # this slot) — lets `AgentLoop.trace_chain` draw the cross-capture causal arrow the
+    # demo trace shows without merging two captures' trace lists into one.
     opened_by: tuple[str, int] | None = None
     trace: list[TraceEntry] = field(default_factory=list)
 
@@ -107,8 +105,8 @@ class AgentLoop:
 
     policy: Policy = field(default_factory=load_policy)
     captures: dict[str, Capture] = field(default_factory=dict)
-    # Only ACCEPTED captures count as "the batch" for duplicate detection (SPEC § 4's
-    # "Hamming distance against the open batch" means the already-accepted set).
+    # Only ACCEPTED captures count as "the batch" for duplicate detection: measurement 8's
+    # Hamming distance is taken against the already-accepted set.
     accepted_hashes: dict[str, str] = field(default_factory=dict)
     _counter: int = 0
     # app/server.py's ThreadingHTTPServer serves one shared AgentLoop from multiple OS
@@ -140,8 +138,8 @@ class AgentLoop:
 
     def trace_chain(self, capture_id: str) -> list[dict[str, Any]]:
         """Flatten this capture's trace and every ancestor's into one globally-numbered
-        sequence (SPEC § 7's demo table), resolving each capture's ``opened_by`` into a
-        cross-capture ``caused_by``."""
+        sequence (the table ``tools/run_demo.py`` prints), resolving each capture's
+        ``opened_by`` into a cross-capture ``caused_by``."""
         chain: list[str] = []
         cursor: str | None = capture_id
         while cursor is not None:
@@ -178,8 +176,8 @@ _default_loop: AgentLoop | None = None
 
 def default_loop() -> AgentLoop:
     """The module-level batch `invoke` and `process_capture` fall back to when no
-    explicit ``loop`` is given — mirrors call-e's module-level ``store`` singleton. Tests
-    and the demo script pass their own ``loop`` for isolation instead of relying on this."""
+    explicit ``loop`` is given. Tests and the demo script pass their own ``loop`` for
+    isolation instead of relying on this."""
     global _default_loop
     if _default_loop is None:
         _default_loop = AgentLoop()
@@ -189,9 +187,9 @@ def default_loop() -> AgentLoop:
 def invoke(
     tool: str, args: dict[str, Any] | None, actor: str, *, loop: AgentLoop | None = None
 ) -> Any:
-    """The single chokepoint (SPEC § 3: "every agent tool and every human verb is a call
-    into a single ... chokepoint"). Every mutation in this module happens here or not at
-    all — ``process_capture`` and the demo script only ever call this function."""
+    """The single chokepoint: every agent tool and every human verb is a call into this
+    function. Every mutation in this module happens here or not at all —
+    ``process_capture`` and the demo script only ever call this function."""
     if actor not in ("agent", "reviewer"):
         raise ValueError(f"unknown actor: {actor!r}")
     handler = _HANDLERS.get(tool)
@@ -246,8 +244,8 @@ def _decide_capture(loop: AgentLoop, capture_id: str) -> Verdict:
     }
     cap.record("agent", "decide_capture", matched or {"rule_id": verdict.rule_id}, outputs)
     if verdict.outcome == "accept":
-        # SPEC § 3's "Auto-accept a capture that is comfortably inside every band" is not
-        # a separate tool call — it is what deciding "accept" does.
+        # Auto-accepting a capture that is comfortably inside every band is not a separate
+        # tool call — it is what deciding "accept" does.
         cap.state = "accepted"
         _mark_accepted(loop, cap)
     else:
@@ -337,8 +335,8 @@ def _resolve_duplicate(
         cap.state = "rejected"
     else:
         cap.duplicate_resolved = True
-    # A cleared duplicate stays "escalated" — SPEC § 7's demo is two clicks,
-    # "Not a duplicate -> Approve" — until the separate `approve` call above runs.
+    # A cleared duplicate stays "escalated" until the separate `approve` call above runs:
+    # the reviewer's decision is two steps, "not a duplicate" and then "approve".
 
 
 def _require_escalated(loop: AgentLoop, capture_id: str) -> Capture:

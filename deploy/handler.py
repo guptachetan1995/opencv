@@ -1,25 +1,22 @@
-"""Lambda Function URL entry point for Second Look (#46/#47).
+"""Lambda Function URL entry point for Second Look.
 
-Interim stand-in for SPEC §12's reserved ``src/secondlook/handler.py`` — that module is
-still unbuilt (SPEC's own "Built so far" paragraph calls it a follow-up goal), and #46 is
-scoped away from creating files under ``src/`` or ``app/`` (parallel-safety with sibling
-in-flight goals). This wraps the same ``secondlook.agent_loop`` chokepoint
-``app/server.py`` uses for local dev (``POST /inspect`` -> ``process_capture``,
-``POST /approve/<id>`` -> ``invoke("approve", ..., actor="reviewer")``), translated from
-``http.server``'s request/response shape to the Lambda Function URL event/response shape
-(payload format 2.0). When ``src/secondlook/handler.py`` is eventually built, its routes
-fold in from here and ``deploy/Dockerfile``'s COPY + CMD move in the same PR — until then
-this file is the real Lambda entry point SPEC §9 describes.
+Interim stand-in for a planned ``src/secondlook/handler.py``, which is not built. This
+wraps the same ``secondlook.agent_loop`` chokepoint ``app/server.py`` uses for local dev
+(``POST /inspect`` -> ``process_capture``, ``POST /approve/<id>`` ->
+``invoke("approve", ..., actor="reviewer")``), translated from ``http.server``'s
+request/response shape to the Lambda Function URL event/response shape (payload format 2.0).
+When ``src/secondlook/handler.py`` is eventually built, its routes fold in from here and
+``deploy/Dockerfile``'s COPY + CMD move in the same change — until then this file is the
+real Lambda entry point.
 
 Differs from ``app/server.py`` only where Lambda forces a difference:
   - Uploads go to ``/tmp`` (the only writable path in a Lambda execution environment).
   - No manual ``sys.path`` insert: the Dockerfile copies ``secondlook/`` directly under
     ``${LAMBDA_TASK_ROOT}``, already on the Lambda Python runtime's ``sys.path``.
   - The module-level ``AgentLoop`` persists only for one warm execution environment's
-    lifetime; concurrent Lambda executions get independent, non-shared state. This is not
-    a regression this goal introduces — ``agent_loop.py``'s own docstring already scopes
-    it as an in-memory precursor, and SPEC §9's S3 upgrade path (``store.py``, unbuilt)
-    is what actually fixes it.
+    lifetime; concurrent Lambda executions get independent, non-shared state.
+    ``agent_loop.py``'s own docstring scopes it as an in-memory precursor, and the planned
+    S3-backed ``store.py`` (not built) is what would fix it.
 """
 
 from __future__ import annotations
@@ -34,7 +31,7 @@ from secondlook.agent_loop import AgentLoop, Capture, invoke, process_capture
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 UPLOAD_DIR = Path("/tmp/secondlook-uploads")  # noqa: S108 -- the only writable Lambda path
-MAX_BODY_BYTES = 4 * 1024 * 1024  # mirrors app/server.py's SPEC §9 payload guard
+MAX_BODY_BYTES = 4 * 1024 * 1024  # under Lambda's 6 MB sync payload cap; same as app/server.py
 
 _loop = AgentLoop()
 

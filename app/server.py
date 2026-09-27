@@ -1,27 +1,25 @@
-"""HTTP serving layer for Second Look (#63).
+"""HTTP serving layer for Second Look.
 
-Exposes #45's agent loop over HTTP: ``POST /inspect`` runs perception -> decision ->
+Exposes the agent loop over HTTP: ``POST /inspect`` runs perception -> decision ->
 action on a posted photo, ``GET /trace/<capture_id>`` and ``GET /pending`` read state, and
 ``POST /approve/<capture_id>`` is the human's approval — through the *same*
 ``secondlook.agent_loop.invoke("approve", ..., actor="reviewer")`` call the approval page's
-button hits and the agent's own tools would hit with ``actor="agent"`` (CLAUDE.md: "agent
-and human share one surface"). This module never mutates a ``Capture`` itself; every state
-change happens by calling ``process_capture`` or ``invoke``, both imported unchanged from
-#45's ``agent_loop.py`` — its public signatures are load-bearing for #48, running in
-parallel, and are not touched here.
+button hits and the agent's own tools would hit with ``actor="agent"``: agent and human
+share one surface. This module never mutates a ``Capture`` itself; every state change
+happens by calling ``process_capture`` or ``invoke``, both imported unchanged from
+``agent_loop.py``.
 
-A local dev server, not the Lambda handler SPEC § 12 reserves at
-``src/secondlook/handler.py`` for #46/#47: no AWS SDK, no S3, no framework. SPEC § 11 pins
-no HTTP framework as a runtime dependency — the web layer is "one static HTML file with
-vanilla JavaScript, no framework" — so this uses only the standard library's
-``http.server``. State is one in-memory ``AgentLoop`` per process, matching #45's own
-scope; a persisted store is ``store.py``'s job, not this goal's.
+A local dev server, not the Lambda handler (that is ``deploy/handler.py``): no AWS SDK, no
+S3, no framework. The runtime dependency set is exactly OpenCV and numpy, and the web layer
+is one static HTML file with vanilla JavaScript, so this uses only the standard library's
+``http.server``. State is one in-memory ``AgentLoop`` per process; a persisted store
+(``store.py``) is not built.
 
 Routes:
     GET  /health              -> {"status": "ok"}
     GET  /, /review           -> the approval page (static/review.html)
     GET  /pending             -> escalated captures waiting for a reviewer
-    GET  /trace/<capture_id>  -> the capture's full trace (SPEC § 6 TraceEntry list)
+    GET  /trace/<capture_id>  -> the capture's full trace (a list of TraceEntry rows)
     POST /inspect             -> body: raw image bytes; runs process_capture, returns the
                                  capture's state, measurements and verdict
     POST /approve/<capture_id> -> body: optional JSON {"note": str}; the human approval
@@ -51,7 +49,7 @@ if str(ENTRY / "src") not in sys.path:
 from secondlook.agent_loop import AgentLoop, Capture, invoke, process_capture  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-MAX_BODY_BYTES = 4 * 1024 * 1024  # mirrors SPEC § 9's Lambda payload guard, for parity
+MAX_BODY_BYTES = 4 * 1024 * 1024  # mirrors deploy/handler.py's Lambda payload guard, for parity
 DEFAULT_PORT = 8080
 
 
@@ -68,7 +66,7 @@ def _capture_public(cap: Capture) -> dict[str, Any]:
     """The one JSON shape a ``Capture`` takes over HTTP — used by ``/inspect``,
     ``/pending`` and ``/approve`` so the three routes can't drift into different shapes for
     the same object. Never includes ``image_path``: a local filesystem detail, not
-    evidence (SPEC § 6 stores only derived measurements, never the image itself)."""
+    evidence (the records store only derived measurements, never the image itself)."""
     return {
         "capture_id": cap.capture_id,
         "batch_id": cap.batch_id,

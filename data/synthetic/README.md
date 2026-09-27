@@ -1,4 +1,4 @@
-# Synthetic sample set (SPEC § 10, primary set)
+# Synthetic sample set (primary set)
 
 Seventeen 1200×1600 JPEG (q85) captures of three synthetic receipts on a textured table,
 each with one defect applied by `tools/make_samples.py` through OpenCV with known

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local, Docker-free, AWS-free smoke check for deploy/handler.py (#46).
+"""Local, Docker-free, AWS-free smoke check for deploy/handler.py.
 
 Calls ``handler.handler()`` in-process with two fake Lambda Function URL events. Catches a
 broken import or a routing bug before anyone spends a Docker build or a real deploy on it.

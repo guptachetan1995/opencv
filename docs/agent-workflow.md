@@ -79,7 +79,7 @@ flowchart TD
 
   CALLOUT1["Callout A — code_decoded == false is a CLAUSE of rule 7:<br/>a decoded QR cancels the retake a soft-focus page would otherwise get.<br/>A measurement can call OFF an action, not only call one."]
   CALLOUT2["Callout B — attempt >= 3 fires rule 4, persistent_defect (escalate):<br/>after two retakes the agent stops guessing and asks a person."]
-  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; override, discard and close_batch<br/>are named unbuilt in agent_loop.py's own docstring.<br/>Drawn AS BUILT; agent-workflow.md records where this diverges from SPEC § 16B."]
+  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; override, discard and close_batch<br/>are named unbuilt in agent_loop.py's own docstring.<br/>Drawn AS BUILT; agent-workflow.md records where this diverges from the pre-code design."]
 
   OPEN --> INSPECT
   INSPECT --> INSPECTFN
@@ -242,17 +242,19 @@ and the deliberately unfixable `blur_4 → blur_4 → blur_4` chain correctly do
 converge — it escalates as `persistent_defect` on the third decision. Convergence overall:
 **5/6 (83.3%)**.
 
-## Where this diverges from SPEC § 16B
+## Where this diverges from the pre-code design
 
-SPEC § 16B was written before the loop existed. Two of its prescriptions are drawn
+The workflow diagram's outline was written before the loop existed, as part of the entry's
+design notes (not published in this repository). Two of its prescriptions are drawn
 differently here, and the reason is accuracy rather than preference:
 
-- § 16B asks for a human review lane "containing all six human-only verbs". Only three are
-  built. All six appear, but `override`, `discard` and `close_batch` are dashed and labelled
-  NOT BUILT.
-- § 16B's perception node points at "the eight metrics, drawn as a bundle" via
-  `inspect_capture`; as built, the ungated `open_capture` / `attach_image` plumbing sits
-  before it and is drawn, because otherwise the loop-back edge has nowhere to land.
+- The outline asks for a human review lane containing all six human-only verbs. Only three
+  are built. All six appear, but `override`, `discard` and `close_batch` are dashed and
+  labelled NOT BUILT.
+- The outline's perception node is `inspect_capture` with the eight metrics drawn as a
+  bundle; as built, the ungated `open_capture` / `attach_image` plumbing sits before it and
+  is drawn, because otherwise the loop-back edge has nowhere to land.
 
-SPEC § 16 is left unrevised on purpose — it is the record of the pre-implementation
-intention. See [`architecture.md`](./architecture.md) for the same treatment of § 16A.
+The outline is left unrevised on purpose — it is the record of the pre-implementation
+intention. See [`architecture.md`](./architecture.md#where-this-diverges-from-the-pre-code-design)
+for the same treatment of the architecture diagram.

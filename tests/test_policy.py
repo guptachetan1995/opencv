@@ -1,4 +1,4 @@
-"""SPEC § 13 — Policy: table-driven, one fixture per rule; first-match-wins is asserted
+"""Policy: table-driven, one fixture per rule; first-match-wins is asserted
 explicitly; ``firings`` records every rule evaluated, not only the one that matched."""
 
 from __future__ import annotations
