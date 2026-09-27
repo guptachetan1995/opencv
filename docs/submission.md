@@ -156,6 +156,13 @@ measurement that produced each decision. `GET /trace/:capture_id` returns it.
       <https://youtu.be/zOfV23uB8Ts>
 - [x] Repository public, so judges need no access grant —
       [github.com/guptachetan1995/opencv](https://github.com/guptachetan1995/opencv)
+- [x] Devpost page completed 2026-09-27: the story opens with the repository link and the
+      one-command local demo (`make setup`, then `.venv/bin/python tools/run_demo.py`), "Try
+      it out" links the repository, a 3:2 thumbnail shows the glare input, and the gallery
+      holds nine captioned images in demo order — the glare input (`glare_text.jpg`), its
+      retake verdict, the retake photo (`crop_bottom.jpg`), the stored trace, the
+      not-a-document escalation, the review queue, the approved trace, the evaluation
+      headline and the architecture diagram
 - [ ] Live Function URL — attempted 2026-09-17 and blocked by the AWS account's Free Plan
       Service Control Policy ([`deploy.md`](./deploy.md)). Not achievable without a paid
       account upgrade or a separate AWS account, neither available. The rules' stated
