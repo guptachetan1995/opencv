@@ -43,12 +43,19 @@ anywhere: no email, no accounting integration, no payment.
 [devpost.com/software/second-look-0l5bas](https://devpost.com/software/second-look-0l5bas).
 **Demo video:** <https://youtu.be/zOfV23uB8Ts>
 
-**Try it:** `make setup`, then `.venv/bin/python tools/run_demo.py` (the whole loop, printed
-as its trace) or `make run` and open <http://127.0.0.1:8080/> (the review page).
-**A live screen-share of the running server — `make run`, `tools/run_demo.py` and the review
-page — is available to judges on request via a Devpost message.** There is no public endpoint
-yet: the AWS account's Free Plan policy blocks the Lambda path, and the EC2 deploy is
-prepared but not launched ([Deployment](#deployment)).
+**Try it live:** <http://32.236.165.113/> — the same server on one AWS EC2 instance in Sydney,
+plain HTTP, since 2026-09-28. The page there is the review queue, empty until something
+escalates. To put a card on it, run from the root of a clone
+`curl -s -X POST --data-binary @data/synthetic/not_doc.jpg http://32.236.165.113/inspect` (its
+JSON answers `"state": "escalated", "review_reason": "not_a_document"`), then reload the page:
+the card shows the rule that fired, its table of checks and the key measurements without a
+token. The photo overlay and the Approve / Reject buttons need the reviewer token, which is not
+published, so the card stays in the queue until the entrant acts on it. The `curl` checks in
+[Deployment](#deployment) run against it from the root of a clone (curl and python3 only).
+A static replay of a recorded run is at <https://guptachetan1995.github.io/opencv/>.
+**Or locally:** `make setup`, then `.venv/bin/python tools/run_demo.py` (the whole loop, printed
+as its trace) or `make run` and open <http://127.0.0.1:8080/> (the review page). A live
+screen-share of the review page is also available to judges on request via a Devpost message.
 
 This README covers [what already exists](#what-already-exists-and-what-this-adds),
 [how it works](#how-it-works) (the measurements, the decision cascade, the agent tools and
@@ -58,8 +65,8 @@ human verbs, the trace), [the demo](#the-demo), the [evaluation headline](#evalu
 [what is not built](#what-is-not-built). The technical report, both diagrams and the
 generated evaluation are in [`docs/`](#documentation).
 
-**Status:** code-complete and tested locally; the Lambda deploy is blocked by the account,
-and an EC2 console deploy is prepared for the owner to launch.
+**Status:** code-complete and tested locally; the same routes serve live on AWS EC2 since
+2026-09-28, and the Lambda deploy is blocked by the account.
 
 | Layer | State |
 |---|---|
@@ -69,9 +76,9 @@ and an EC2 console deploy is prepared for the owner to launch.
 | `service.py` + `app/server.py` — the HTTP routes (`make run`) | Built: inspect, retake, trace, overlay, and the three human verbs, which need the reviewer token; `app/smoke.py` (`make smoke`) exercises it end to end |
 | `app/static/review.html` — the review page | Built: the overlay, the clause that fired, the key measurements, and Approve / Reject / "Is a duplicate" / "Not a duplicate" |
 | `app/mcp_server.py` — a stdio MCP server over the agent tools | Built: the agent tools and reads only; the human verbs are not offered |
-| `deploy/handler.py` (Lambda), the container images, [`docs/deploy.md`](./docs/deploy.md) | Lambda adapter and image: built (the image locally for `linux/arm64`, 2026-09-17). EC2 image: written, never built yet — its first build is the instance's first boot |
+| `deploy/handler.py` (Lambda), the container images, [`docs/deploy.md`](./docs/deploy.md) | Lambda adapter and image: built (the image locally for `linux/arm64`, 2026-09-17). EC2 image: built on the instance's first boot, 2026-09-28, and serving |
 | [`docs/evaluation.md`](./docs/evaluation.md) | Built |
-| Live AWS endpoint | **Lambda: blocked** — the only available AWS account's Service Control Policy denies `ecr:CreateRepository` and `lambda:CreateFunction`. **EC2: prepared, not launched** — see [Deployment](#deployment) |
+| Live AWS endpoint | **EC2: live** at <http://32.236.165.113/> since 2026-09-28 — see [Deployment](#deployment). **Lambda: blocked** — the only available AWS account's Service Control Policy denies `ecr:CreateRepository` and `lambda:CreateFunction` |
 | `apply.py`/`store.py` (persistence), three of the six human verbs, the browser agent lane | Not built — see [What is not built](#what-is-not-built) |
 
 The serving paths are in-memory, matching `agent_loop.py`'s own scope; there is no
@@ -108,8 +115,8 @@ pages linked above:
 
 ## How it works
 
-Diagrams, both drawn as built (solid = built and exercised by tests, dashed = planned, not
-built): [`docs/architecture.svg`](./docs/architecture.svg), walked through in
+Diagrams, both drawn as built (solid = built and exercised by tests, or deployed and verified
+live; dashed = planned, not built or not deployed): [`docs/architecture.svg`](./docs/architecture.svg), walked through in
 [`docs/architecture.md`](./docs/architecture.md), and
 [`docs/agent-workflow.svg`](./docs/agent-workflow.svg), walked through in
 [`docs/agent-workflow.md`](./docs/agent-workflow.md).
@@ -421,9 +428,9 @@ photograph of a screen showing a receipt (moiré) is not detected.
 - `pytest==9.1.1`, `ruff==0.16.6`, `Pillow==12.3.0` (dev only; Pillow is not in either image)
 - One static HTML page, vanilla JavaScript — no framework, no bundler
 - MCP over stdio, written against the standard library — no SDK dependency
-- AWS: a Lambda container image behind a Lambda Function URL (built, blocked by the account),
-  or one EC2 instance running the same routes (prepared, owner-launched). The S3 store and the
-  structured CloudWatch trace logs are designed but not built. **Not AWS App Runner**, which
+- AWS: one EC2 `t3.micro` in `ap-southeast-2` running the same routes (live), and a Lambda
+  container image behind a Lambda Function URL (built, blocked by the account). The S3 store and
+  the structured CloudWatch trace logs are designed but not built. **Not AWS App Runner**, which
   [closed to new customers on 30 April 2026](https://aws.amazon.com/apprunner/).
 
 The runtime dependency set is exactly two packages: `opencv-python-headless` and `numpy`
@@ -597,9 +604,59 @@ tests/                  metrics, policy, schema, samples, OpenCV version, agent 
 
 ## Deployment
 
-**Live endpoint: none yet.** A live screen-share of the running local server — `make run`,
-`tools/run_demo.py` and the review page — is available to judges on request via a Devpost
-message.
+**Live endpoint: <http://32.236.165.113/>** (plain HTTP), since 2026-09-28. One EC2 `t3.micro`
+(Amazon Linux 2023, x86_64) named `secondlook-demo`, in `ap-southeast-2` (Sydney), runs
+`app/server.py` — the same routes and review page as `make run`, with the OpenCV 5 pipeline and
+the agent loop behind them — in a container built from `deploy/ec2/Dockerfile` on first boot by
+`deploy/ec2/user-data.sh`, which clones this public repository. Its security group admits only
+TCP 80; there is no key pair and no SSH. The reviewer routes need a token generated on the
+instance, which is not published. The owner launched it through the AWS console after reviewing
+every field listed in [`docs/deploy.md`](./docs/deploy.md#ec2-console-deploy).
+
+The checks below run from the root of a clone with curl and python3 only. Capture ids are
+assigned in arrival order, so they take the ids from your own `/inspect` response:
+
+```sh
+BASE=http://32.236.165.113
+curl -s -w '\n' "$BASE/health"
+R=$(curl -s -X POST --data-binary @data/synthetic/glare_text.jpg "$BASE/inspect")
+echo "$R" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d["verdict"]; print(d["capture_id"], d["state"], v["rule_id"], v["hint_box"], "successor:", d["successor_id"])'
+ID=$(echo "$R" | python3 -c 'import json,sys; print(json.load(sys.stdin)["capture_id"])')
+SLOT=$(echo "$R" | python3 -c 'import json,sys; print(json.load(sys.stdin)["successor_id"])')
+curl -s -X POST --data-binary @data/synthetic/crop_bottom.jpg "$BASE/retake/$SLOT" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["capture_id"], d["state"], d["verdict"]["rule_id"])'
+curl -s -w ' %{http_code}\n' -X POST -d '{}' "$BASE/approve/$ID"
+curl -s -o /dev/null -w '%{time_total}s\n' "$BASE/health"
+```
+
+On 2026-09-28, run from the repository root against the fresh instance, where those ids were
+`c_001` and `c_002`, the same checks printed exactly:
+
+```
+{"status": "ok"}
+c_001 awaiting_retake glare_over_total [201, 1006, 462, 141] successor: c_002
+c_002 awaiting_retake bottom_edge_clipped
+{"error": "reviewer token required"} 401
+0.883478s
+```
+
+That is the local expected output line for line, hint box included: the glare photo gets a
+retake, the retake gets a different rule, and an approve without the token is refused with
+`401`. The last line is one `/health` round trip from Bengaluru to Sydney, informational only.
+If an earlier visitor had `clean_a.jpg` accepted on the instance, `glare_text.jpg` is escalated
+as `suspected_duplicate` instead (that rule ranks above glare in the cascade), so there is no
+retake slot and the retake line fails; `tools/run_demo.py` runs the same chain locally on a
+fresh loop. Also observed then: `GET /pending`
+answered `[]`, `GET /` served the review page, `GET /trace/c_001` returned the stored trace
+(`inspect_capture`, then `decide_capture` with `glare_over_text_frac` 0.9211 choosing the
+`glare_over_total` retake, then `request_recapture`), and `GET /overlay/c_001` answered `401`
+without the token. The review-page check with the token (step 4 in `docs/deploy.md`) is the
+owner's and is not yet recorded. A live screen-share of the review page is available to judges
+on request via a Devpost message.
+
+The address holds while the instance is not stopped (there is no Elastic IP), and state is in
+memory, so a container restart empties the batch. Teardown after judging ends on 9 Nov 2026:
+terminate the instance, then delete its security group.
 
 **Lambda: built, blocked, not pending.** The designed target is one AWS Lambda function,
 packaged as a container image on arm64 (Graviton2), 2048 MB, Python 3.13, behind a Lambda
@@ -609,16 +666,9 @@ Control Policy denied `ecr:CreateRepository` and `lambda:CreateFunction` outrigh
 tried in `us-east-1`, on both the container path and a sized-and-verified `.zip` fallback. The
 attempt log with the real AWS errors is in [`docs/deploy.md`](./docs/deploy.md).
 `deploy/deploy.sh` is committed and idempotent, now also requires `REVIEWER_TOKEN`, and no
-automation runs it.
-
-**EC2: prepared, owner-launched.** Another project in the same AWS organization was deployed
-to an EC2 instance in `ap-southeast-2` through the console on 2026-09-11, so the same path is
-prepared here:
-one `t3.micro` running `app/server.py` — the same routes, the reviewer token required — from
-`deploy/ec2/Dockerfile`, built on first boot by `deploy/ec2/user-data.sh` from this public
-repository. [`docs/deploy.md`](./docs/deploy.md#ec2-console-deploy) has every console field. It
-has not been launched yet; this section will carry the URL and its verification output once it
-has.
+automation runs it. That block is why the live endpoint is on EC2: another project in the same
+AWS organization had been deployed to EC2 in `ap-southeast-2` through the console on
+2026-09-11, so the same path was taken here.
 
 Considered and rejected: **AWS App Runner** — "will no longer accept new customers starting on
 April 30, 2026" (<https://aws.amazon.com/apprunner/>); **Amazon ECS Express Mode** — an
@@ -653,7 +703,7 @@ Stated here so nothing above reads as a claim it isn't:
 | [`docs/agent-workflow.md`](./docs/agent-workflow.md) | agent workflow diagram ([`.svg`](./docs/agent-workflow.svg), [`.mmd`](./docs/agent-workflow.mmd)) — perception, decision, action, and the human lane |
 | [`docs/evaluation.md`](./docs/evaluation.md) | generated evaluation report: task success (isolated and shared batch), failure cases, limitations |
 | [`docs/real-photo-set.md`](./docs/real-photo-set.md) | the protocol for the real-photograph set (not yet collected) |
-| [`docs/deploy.md`](./docs/deploy.md) | the deployment runbook: Lambda (blocked) and the EC2 console deploy (owner-run) |
+| [`docs/deploy.md`](./docs/deploy.md) | the deployment runbook: the EC2 console deploy (live, with its verification output) and Lambda (blocked) |
 | [`docs/video-script.md`](./docs/video-script.md) | the script and shot list for the demo video |
 
 ## Licence

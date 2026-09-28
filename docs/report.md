@@ -14,13 +14,13 @@ Companion documents: [`architecture.md`](./architecture.md) and
 number quoted here), [`deploy.md`](./deploy.md) (the deployment runbook), and
 [`submission.md`](./submission.md).
 
-**Live endpoint:** none yet. The Lambda deployment was attempted and is **blocked**: the
-only AWS account available for this submission denies `ecr:CreateRepository` and
-`lambda:CreateFunction` via an Organization-level Service Control Policy tied to its Free Plan
-tier. An EC2 console deploy of the same routes is prepared for the owner to launch. See § 5,
-and [`deploy.md`](./deploy.md) for the real error output and every console field. Until an
-endpoint serves, a live screen-share of the running local server is available to judges on
-request via a Devpost message.
+**Live endpoint:** <http://32.236.165.113/> (plain HTTP), since 2026-09-28 — the same routes
+on one EC2 `t3.micro` in `ap-southeast-2`, launched by the owner through the AWS console. The
+Lambda deployment was attempted and is **blocked**: the only AWS account available for this
+submission denies `ecr:CreateRepository` and `lambda:CreateFunction` via an Organization-level
+Service Control Policy tied to its Free Plan tier. See § 5, and [`deploy.md`](./deploy.md) for
+the EC2 verification output, the real Lambda error output and every console field. A live
+screen-share of the review page is also available to judges on request via a Devpost message.
 
 ---
 
@@ -80,7 +80,7 @@ The path of one capture:
 
 ```
 client (browser)
-  → app/server.py (local, make run)  |  deploy/handler.py (AWS Lambda Function URL)
+  → app/server.py (local make run, and the live EC2 instance)  |  deploy/handler.py (AWS Lambda Function URL, blocked)
       → agent_loop.process_capture
           → agent_loop.invoke("inspect_capture", …, actor="agent")  → perception.inspect()  [OpenCV 5]
           → agent_loop.invoke("decide_capture",  …, actor="agent")  → policy.decide()       [11-rule cascade]
@@ -143,8 +143,9 @@ capture's evidence overlay, the clause that fired and its key measurements, so t
 deciding sees what the agent saw.
 
 **The diagrams are drawn as built, not as the design sketched them** before any code
-existed: solid means built and exercised by tests, dashed means planned and not built, and
-each dashed node names what it waits on.
+existed: solid means built and exercised by tests (or, for the EC2 node, deployed and verified
+live), dashed means planned and not built or not deployed, and each dashed node names what it
+waits on.
 [`architecture.md`](./architecture.md#where-this-diverges-from-the-pre-code-design) lists the
 divergences (chief among them: the chokepoint is `agent_loop.invoke()`, not the separate
 apply-module the design imagined; S3, CloudWatch, the DNN text path and the UI's agent lane are
@@ -201,7 +202,29 @@ See [`agent-workflow.md`](./agent-workflow.md#the-qualifying-beat).
 
 ## 5. AWS deployment
 
-**Surface:** one AWS Lambda function, packaged as a **container image**, on **arm64
+**What serves today: one EC2 instance, live since 2026-09-28 at <http://32.236.165.113/>.** A
+`t3.micro` (Amazon Linux 2023, x86_64) in `ap-southeast-2` runs `app/server.py` — the same
+routes, the same `invoke()` chokepoint and the same review page as `make run` — in a container
+built from `deploy/ec2/Dockerfile` (`python:3.13-slim`) on first boot by
+`deploy/ec2/user-data.sh`, which clones the public repository. Its security group admits only
+TCP 80, there is no key pair, and the reviewer token is generated on the instance and never
+written into the form or the repository. A coding assistant filled the console's launch wizard
+from [`deploy.md`](./deploy.md#ec2-console-deploy); the owner reviewed every field and clicked
+Launch. Run
+from the repository root against the fresh instance, `deploy.md`'s verification printed exactly
+the output expected from a local run: `/health` answered `{"status": "ok"}`, `glare_text.jpg` got the
+`glare_over_total` retake with the hint box `[201, 1006, 462, 141]`, the retake into `c_002` got
+the different rule `bottom_edge_clipped`, and an approve without the token answered `401`. The
+review-page check with the token is the owner's and not yet recorded. Unlike the Lambda design
+below, the instance is always on: the `t3.micro` costs $0.0132 an hour in Sydney plus the hourly
+public IPv4 charge, drawn from the account's Free Plan promotional credits, and its teardown is
+planned for after judging ends on 9 November 2026. It serves plain HTTP (§ 8).
+
+The `ap-southeast-2` choice is borrowed from another project in the same AWS organization,
+which was deployed to EC2 there through the console on 2026-09-11. EC2 was not the designed
+target; it is the path the account allowed.
+
+**The designed surface:** one AWS Lambda function, packaged as a **container image**, on **arm64
 (Graviton2)**, 2048 MB, Python 3.13, behind a **Lambda Function URL**. No Application Load
 Balancer, no API Gateway. The base image is `public.ecr.aws/lambda/python:3.13`
 (`deploy/Dockerfile`); the image is pushed to **Amazon ECR** and the function points at the
@@ -238,7 +261,8 @@ aws lambda update-function-code --function-name "$FUNCTION_NAME" \
   --image-uri "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:PREVIOUS_TAG"
 ```
 
-**Deploying is an owner-only action, and it was attempted — twice — and blocked.**
+**Deploying is an owner-only action, and the Lambda deploy was attempted — twice — and
+blocked.**
 No automation in this repository runs `deploy.sh`; the owner ran it personally on 2026-09-17
 against the only AWS account available for this submission. `ecr:CreateRepository` was
 denied by an explicit Service Control Policy on that account's AWS Organization. A second
@@ -257,16 +281,8 @@ unrestricted AWS account. Neither was available: no spare email for a new accoun
 budget for the upgrade. Rather than paper over this, it's reported here plainly — the
 same standard this report holds every other limitation to. `deploy.sh`, `deploy/handler.py`
 and the container image are all built, tested locally, and ready to run unmodified the
-moment an unrestricted account exists. Both attempts were in `us-east-1`.
-
-**The EC2 path, prepared for the owner to launch.** Another project in the same AWS
-organization was deployed to EC2 through the console on 2026-09-11 in `ap-southeast-2`, so the
-same route table is prepared as one `t3.micro` there: `deploy/ec2/Dockerfile` (`app/server.py`
-on `python:3.13-slim`), built on first boot by `deploy/ec2/user-data.sh` from the public
-repository and served on port 80, with a reviewer token generated on the instance and never
-written into the form or the repository. [`deploy.md`](./deploy.md#ec2-console-deploy) lists
-every console field; the owner reviews them and clicks Launch, and the verification output goes
-into `deploy.md` when it exists. It has not been launched at the time of writing.
+moment an unrestricted account exists. Both attempts were in `us-east-1`. That block is why
+the live endpoint above is on EC2.
 
 ## 6. Evaluation
 
@@ -373,7 +389,8 @@ Five limitations of the evaluation itself:
 - **Approval latency is simulated,** not measured against a real reviewer.
 - **Latency and cost against a deployed endpoint are unmeasured.** The evaluation runs the
   in-memory loop locally; the Lambda path is blocked by the account restriction in § 5, and
-  the EC2 path has not been launched.
+  against the live EC2 endpoint only one `/health` round trip was timed (0.88 s, Bengaluru to
+  Sydney) — not the pipeline's latency.
 - **The retake-convergence set is scripted, not sampled.** Six sequences chosen to exercise
   every retake-triggering rule plus the persistent-defect stop — not a random sample of real
   retake behaviour, because no real capture stream exists yet.
@@ -385,7 +402,8 @@ claimed. It is written up here because misrepresenting what the system catches i
 rejection ground for this competition.
 
 Finally, scope: state is in memory. `store.py` (S3) and CloudWatch wiring are specified and
-unbuilt, so a Lambda cold start loses the batch, and concurrent executions do not share it.
+unbuilt, so a container restart on the EC2 instance empties the batch; on Lambda a cold start
+would lose it, and concurrent executions would not share it.
 `src/secondlook/handler.py` is likewise unbuilt — `deploy/handler.py` is the working interim
 entry point.
 
@@ -419,9 +437,9 @@ Receipts carry names, card last-four digits, addresses and locations, so:
 - **Known-undetected cases are reported as undetected** — the moiré case above is the
   example — because overstating capability is a stated rejection ground.
 
-One deliberate, documented tradeoff: a public endpoint — the Function URL is created with
-**`--auth-type NONE`**, and the EC2 instance serves plain HTTP — so a judge can reach it
-without an AWS credential. That no longer exposes the human gate: approve, reject,
+One deliberate, documented tradeoff: a public endpoint — the live EC2 instance serves plain
+HTTP, and the designed Function URL is created with **`--auth-type NONE`** — so a judge can
+reach it without an AWS credential. That no longer exposes the human gate: approve, reject,
 resolve-duplicate and the photo overlay need the reviewer token (`REVIEWER_TOKEN`), and answer
 `401` without it. What stays public is posting a photo and reading measurements and traces.
 Over plain HTTP the token protects those routes from casual callers, not from someone
@@ -442,7 +460,7 @@ For the six general criteria:
 | Real-world impact | 20% | § 1 and § 2 — the cost asymmetry that makes silent accepts the expensive error |
 | User experience | 10% | § 2, plus `app/static/review.html` (the evidence overlay, the clause that fired, Approve / Reject / resolve-duplicate) and the per-capture instruction with a hint box; the README's hero image |
 | Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, <https://youtu.be/zOfV23uB8Ts>, scripted in [`video-script.md`](./video-script.md) |
-| Cloud delivery, reproducibility, responsible operation | 10% | § 5 — the Lambda path is built, tested and **blocked** by the only available account's Free Plan guardrail (attempt log in [`deploy.md`](./deploy.md)); the EC2 console deploy is prepared for the owner to launch; rollback documented regardless; the hash-pinned locks; § 8 |
+| Cloud delivery, reproducibility, responsible operation | 10% | § 5 — the same routes live on EC2 at <http://32.236.165.113/>, with the verification output in [`deploy.md`](./deploy.md); the Lambda path is built, tested and **blocked** by the only available account's Free Plan guardrail (attempt log in `deploy.md`); rollback documented regardless; the hash-pinned locks; § 8 |
 
 For the five Agentic Vision Award rubric lines:
 

@@ -12,17 +12,20 @@ drawn in full, because they are the entry's whole claim.
 
 ## Legend
 
-**Solid box or solid edge = built and exercised by tests. Dashed box or dashed edge =
-planned, not built.** Every dashed node names what it waits on (a planned module, or the
-AWS account block), so a reader can tell at a glance what runs today from what is on paper.
+**Solid box or solid edge = built and exercised by tests, or deployed and verified live (the
+EC2 node, [`deploy.md`](./deploy.md#after-launch) step 3). Dashed box or dashed edge =
+planned, not built or not deployed.** Every dashed node names what it waits on (a planned
+module, or the AWS account block), so a reader can tell at a glance what runs today from what
+is on paper.
 The one heavily outlined box, `agent_loop.invoke(tool, args, actor)`, is the single
 chokepoint: every arrow from the HTTP routes, from the MCP server, from `process_capture`, and
 from the review page's buttons goes *into* it, and none route around it.
 
 ```mermaid
 %% Second Look — architecture, drawn AS BUILT (not as the pre-code design sketched it).
-%% Solid = built and exercised by tests. Dashed = planned, not built; each dashed node
-%% names what it waits on. Source of truth: src/, app/, deploy/.
+%% Solid = built and exercised by tests, or deployed and verified live (the EC2 node).
+%% Dashed = planned, not built or not deployed; each dashed node names what it waits on.
+%% Source of truth: src/, app/, deploy/.
 flowchart LR
   classDef built fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111
   classDef unbuilt fill:#f5f5f5,stroke:#999999,stroke-width:1px,stroke-dasharray: 6 4,color:#555555
@@ -45,7 +48,7 @@ flowchart LR
 
   subgraph AWS["AWS"]
     FURL["Lambda Function URL<br/>HTTPS, public, auth-type NONE<br/>BLOCKED — account SCP denies lambda:CreateFunction"]
-    EC2["EC2 t3.micro, ap-southeast-2 — app/server.py on port 80<br/>deploy/ec2/Dockerfile + user-data.sh<br/>PREPARED, NOT LAUNCHED — owner clicks Launch"]
+    EC2["EC2 t3.micro, ap-southeast-2 — app/server.py on port 80<br/>deploy/ec2/Dockerfile + user-data.sh<br/>LIVE since 2026-09-28 — http://32.236.165.113/"]
     LAMBDA["deploy/handler.py<br/>Lambda container image, payload format 2.0<br/>arm64 / Graviton2, 2048 MB, Python 3.13<br/>MAX_BODY_BYTES = 4 MB"]
     FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — planned module —<br/>deploy/handler.py is the interim stand-in"]
     ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base"]
@@ -81,11 +84,11 @@ flowchart LR
   end
 
   FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. See report.md § 5."]
-  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the module or step it waits on.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from the pre-code design. No AWS COOL service is used."]
+  LEGEND["LEGEND — solid box or solid edge = built and exercised by tests,<br/>or deployed and verified live (the EC2 node, deploy.md step 3).<br/>Dashed box or dashed edge = planned, not built or not deployed;<br/>each dashed node names the module or step it waits on.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from the pre-code design. No AWS COOL service is used."]
 
   PHONE -->|"POST /inspect, /retake/:id — raw image bytes, 4 MB cap"| SERVER
   PHONE -.->|"POST /inspect — 4 MB cap; Lambda sync payload cap is 6 MB"| FURL
-  PHONE -.->|"the same routes, plain HTTP"| EC2
+  PHONE -->|"the same routes, plain HTTP"| EC2
   PHONE --> REVIEW
   AGENTLANE -.-> SERVER
   SERVER --> REVIEW
@@ -95,7 +98,7 @@ flowchart LR
   MCP -->|"actor=agent"| INVOKE
 
   SERVER --> SERVICE
-  EC2 -.-> SERVICE
+  EC2 --> SERVICE
   FURL -.-> LAMBDA
   LAMBDA --> SERVICE
   SERVICE --> PROC
@@ -131,8 +134,8 @@ flowchart LR
   M1 --> M8
   M5 -.->|"unbuilt alternative"| M5DNN
 
-  class PHONE,REVIEW,SERVER,SMOKE,MCP,MCPCLIENT,SERVICE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,OVERLAY,M1,M2,M3,M4,M5,M6,M7,M8 built
-  class AGENTLANE,FURL,EC2,FUTUREH,S3,CW,M5DNN unbuilt
+  class PHONE,REVIEW,SERVER,SMOKE,MCP,MCPCLIENT,SERVICE,EC2,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,OVERLAY,M1,M2,M3,M4,M5,M6,M7,M8 built
+  class AGENTLANE,FURL,FUTUREH,S3,CW,M5DNN unbuilt
   class INVOKE choke
   class ESCALATE human
   class FOOTNOTE,LEGEND note
@@ -174,10 +177,12 @@ endpoint was never created — deployment was attempted and blocked by the only 
 AWS account's Free Plan Service Control Policy, not left undone. See
 [`deploy.md`](./deploy.md) for the attempt log.
 
-The **EC2** node is dashed too: one `t3.micro` in `ap-southeast-2` running `app/server.py` from
-`deploy/ec2/Dockerfile`, built on first boot by `deploy/ec2/user-data.sh`. Every console field
-is prepared in [`deploy.md`](./deploy.md#ec2-console-deploy); it becomes solid once the owner
-has launched it and its verification output is recorded.
+The **EC2** node is solid: one `t3.micro` in `ap-southeast-2` running `app/server.py` from
+`deploy/ec2/Dockerfile`, built on first boot by `deploy/ec2/user-data.sh` from the public
+repository. The owner launched it through the console on 2026-09-28 from the fields in
+[`deploy.md`](./deploy.md#ec2-console-deploy), and it serves the same routes at
+<http://32.236.165.113/>; the verification output run against it is recorded in `deploy.md`.
+It is the AWS path that serves today.
 
 **Amazon S3** and **Amazon CloudWatch Logs** appear dashed: the design calls for a private
 bucket behind a `store.py` module and one structured log line per trace entry, and neither is

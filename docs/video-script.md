@@ -43,7 +43,7 @@ hyphenated or numeric term as the words it takes to say.
 | 6 | `gate` | 26000 | And an agent cannot route around the person. Here an agent connected over MCP calls its tools on an escalated capture: every one is refused, and approve is not even a tool it can see. Over HTTP, the review routes answer four-oh-one without the reviewer's token. |
 | 7 | `arch-adapters` | 13000 | One loop, three thin adapters: a standard-library HTTP server, a Lambda handler, and an MCP server that offers the agent tools and never the human verbs. |
 | 7 | `arch-core` | 16000 | Inside, one chokepoint with two guards: who is calling, and whether the capture is still the agent's to touch. Eight OpenCV 5 measurements, and an eleven-rule cascade from a committed table. No model decides. |
-| 7 | `arch-aws` | 12000 | Dashed means not built or not deployed. The Lambda path is blocked by the account's policy, and an EC2 deploy is prepared for launch. |
+| 7 | `arch-aws` | 12000 | Dashed means not built or not deployed. The Lambda path is blocked by the account's policy; the same routes are live on EC2. |
 | 8 | `results` | 30000 | Seventeen synthetic samples, fixed seed. One receipt at a time, fifteen of fifteen reach the right verdict. In one shared batch, nine of fifteen: receipts with the same layout collide as suspected duplicates, and every one of those goes to a person. Silent accepts, the number that matters, are zero both ways. There is no real-photo set yet; its protocol is written. |
 | 9 | `close` | 10000 | The code, the report and the evaluation are at the link below. |
 
@@ -63,9 +63,9 @@ working (beats 2–6), its architecture (beat 7), its principal results (beat 8)
 | `review-note` | the same card with the note "not a receipt" typed | the same page |
 | `review-done` | after **Reject**: "Nothing is waiting for review." | the same page |
 | `gate` | a terminal: an MCP client session with `app/mcp_server.py` — `open_capture` and `run_loop` escalate `not_doc.jpg`, then each agent tool on it answers `StateError: … refused`, and `approve` answers `Unknown tool`; then `curl … /approve/c_004` answering `{"error": "reviewer token required"}` | captured at render time |
-| `arch-*` | `docs/architecture.svg`, zoomed to the adapters, the chokepoint and the dashed AWS nodes | the committed diagram |
+| `arch-*` | `docs/architecture.svg`, zoomed to the adapters, the chokepoint and the AWS band (the Lambda path dashed, the EC2 node solid) | the committed diagram |
 | `results` | the headline rows of `docs/evaluation.md`: 15/15 isolated, 9/15 shared batch, 0/15 silent accepts in both, 5/6 retake convergence, 4/4 escalation precision with its caveat | read from the committed file at render time |
-| `close` | the repository URL, the Devpost page, and the screen-share offer | a card |
+| `close` | the repository URL, the live endpoint URL (<http://32.236.165.113/>), the Devpost page, and the screen-share offer | a card |
 
 ## Claims and where the screen proves them
 
@@ -82,12 +82,15 @@ working (beats 2–6), its architecture (beat 7), its principal results (beat 8)
 | Only with the reviewer's token | `review-open`, `gate` | the token field; the `401` body in the `gate` terminal |
 | Every agent tool is refused on an escalated capture; approve is not a tool | `gate` | the `StateError` lines and `Unknown tool: approve` |
 | Three adapters, one chokepoint, two guards, 8 measurements, 11 rules | `arch-*` | the diagram's nodes |
-| Lambda blocked, EC2 prepared | `arch-aws` | the dashed nodes' labels |
+| Lambda blocked, EC2 live | `arch-aws` | the dashed Lambda Function URL node's label; the solid EC2 node's label |
 | 15/15, 9/15, 0/15 both ways | `results` | the table |
 
-**If the EC2 instance has been launched and verified before the render**, `arch-aws` is
-stale: redraw the diagram with the EC2 node solid and change that line to "The Lambda path is
-blocked by the account's policy; the same routes run on EC2." and nothing else.
+**The EC2 instance was launched on 2026-09-28 and its verification output is recorded in
+`deploy.md`**, so the diagram now draws the EC2 node solid and `arch-aws` says the same routes
+are live on EC2 (25 spoken words against the earlier line's 26, inside the same 12 s). The
+video needs a re-render from this version before the re-cut is uploaded. The `close` card is
+not read from the shot list above: the render script draws it, and it now carries the live
+endpoint URL above the repository and Devpost links, with the screen-share as a secondary offer.
 
 ## Recording notes
 

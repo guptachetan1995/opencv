@@ -1,17 +1,17 @@
 # Deploying Second Look
 
-Two AWS paths serve the same routes (`src/secondlook/service.py`): a Lambda container image
-behind a Function URL, and one EC2 instance running `app/server.py`. **Deploying is a
-human-only action** — this document is the runbook a person follows; nothing in this repo's
-automation deploys anything.
+Two AWS paths carry the same routes (`src/secondlook/service.py`): a Lambda container image
+behind a Function URL, and one EC2 instance running `app/server.py`, which is the one live.
+**Deploying is a human-only action** — this document is the runbook a person follows; nothing
+in this repo's automation deploys anything.
 
 | Path | State |
 |---|---|
 | Lambda + Function URL (`deploy/deploy.sh`) | **Blocked**: attempted 2026-09-17 in `us-east-1`; the account's Organization Service Control Policy denies `ecr:CreateRepository` and `lambda:CreateFunction`. |
-| EC2 console deploy (`deploy/ec2/`) | **Prepared, not launched.** Every console field is below; the owner reviews them and clicks Launch. |
+| EC2 console deploy (`deploy/ec2/`) | **Live since 2026-09-28** at <http://32.236.165.113/>: instance `secondlook-demo` (`i-03de096367bfaa575`), `t3.micro`, Amazon Linux 2023, `ap-southeast-2`. Step 3's verification output is recorded below; step 4 is the owner's and not yet recorded. |
 
-Until one of them serves, a live screen-share of the running local server (`make run`,
-`tools/run_demo.py`, the review page) is available to judges on request via a Devpost message.
+The EC2 path serves. A live screen-share of the review page (with the reviewer token) and of
+`tools/run_demo.py` is still available to judges on request via a Devpost message.
 
 ## EC2 console deploy
 
@@ -24,8 +24,8 @@ reviewer routes behind a token generated on the instance.
 Another project in the same AWS organization was deployed to EC2 through the console on
 2026-09-11, in `ap-southeast-2`, after `us-east-1` turned out to be blocked by an Organizations
 policy for it too — so `ap-southeast-2` is the one region this account has been seen to allow.
-Whether this account's policy also allows EC2 there is only settled by trying; if the launch is
-refused, record the console's error message in this file.
+Whether this account's policy also allowed EC2 there was only settled by trying: the launch on
+2026-09-28 succeeded.
 
 **Before launching:** the public repository must already hold this version (the instance
 clones `main` of `github.com/guptachetan1995/opencv` at boot), and the owner has given a
@@ -49,8 +49,26 @@ go-ahead in chat for this specific launch.
 | Advanced details > User data | the whole of [`deploy/ec2/user-data.sh`](../deploy/ec2/user-data.sh), pasted as text ("already base64-encoded" unticked) |
 | Summary > Number of instances | 1 |
 
-The owner reviews the summary panel against this table and clicks **Launch instance**. The
-agent filling the form never clicks it.
+The owner reviews the summary panel against this table and clicks **Launch instance**. A
+coding assistant filling the form never clicks it. That is how the live instance was launched
+on 2026-09-28: a coding assistant filled the wizard from this table, and the owner reviewed
+every field and clicked Launch instance.
+
+### The live instance
+
+| Property | Value (2026-09-28) |
+|---|---|
+| Instance | `i-03de096367bfaa575`, Name tag `secondlook-demo` |
+| Type | `t3.micro` (2 vCPU, 1 GiB) |
+| Image | Amazon Linux 2023, kernel 6.18, x86_64 (`ami-0eeab0e1473986ffd`) |
+| Region | `ap-southeast-2` (Sydney) |
+| Metadata | IMDSv2 required |
+| Key pair | none |
+| Security group | `secondlook-demo-sg`: inbound TCP 80 from 0.0.0.0/0 only |
+| Storage | 1 × 8 GiB gp3 |
+| Public IPv4 | `32.236.165.113` (no Elastic IP: the address holds only while the instance is not stopped) |
+| Public DNS | `ec2-32-236-165-113.ap-southeast-2.compute.amazonaws.com` |
+| URL | <http://32.236.165.113/> (plain HTTP) |
 
 ### What the boot script does
 
@@ -59,12 +77,13 @@ repository to `/opt/secondlook`, builds `deploy/ec2/Dockerfile`, generates a 32-
 reviewer token with Python's `secrets` module into a root-only file, and runs the container
 with `--restart unless-stopped -p 80:8080 -e REVIEWER_TOKEN=…`. The token never appears in the
 script, the console form or the repository; the script prints it once to the instance's system
-log. First boot takes a few minutes (the image build downloads the pinned wheels).
+log. First boot takes a few minutes (the image build downloads the pinned wheels); on
+2026-09-28 the instance answered `GET /health` within about a minute of polling starting.
 
 ### After launch
 
 1. **Public address:** the instance's "Public IPv4 address" (or public DNS) on its details
-   page. The URL is `http://<public-ip>/`.
+   page. The URL is `http://<public-ip>/` — for `secondlook-demo`, <http://32.236.165.113/>.
 2. **The reviewer token:** Instance > Actions > Monitor and troubleshoot > **Get system log**;
    the line `second-look reviewer token: …` (the log can take a few minutes to appear). Keep it
    out of any published text.
@@ -87,10 +106,32 @@ log. First boot takes a few minutes (the image build downloads the pinned wheels
    Expected: `{"status": "ok"}`, then `c_001 awaiting_retake glare_over_total [201, 1006, 462,
    141] successor: c_002`, then `c_002 awaiting_retake bottom_edge_clipped`, then
    `{"error": "reviewer token required"} 401`, then the round-trip time (informational only).
+
+   **Real output**, run from the repository root against `BASE=http://32.236.165.113` at about
+   2026-09-28T11:51Z, from Bengaluru, on the fresh instance:
+
+   ```
+   {"status": "ok"}
+   c_001 awaiting_retake glare_over_total [201, 1006, 462, 141] successor: c_002
+   c_002 awaiting_retake bottom_edge_clipped
+   {"error": "reviewer token required"} 401
+   0.883478s
+   ```
+
+   Identical to the expected output above, including the hint box on x86_64 Linux. The last line
+   is one `/health` round trip from Bengaluru to Sydney. Also observed then: `GET /pending`
+   answered `[]`; `GET /` answered `200` with the review page (`text/html`, 11798 bytes);
+   `GET /overlay/c_001` without the token answered `401`; `GET /trace/c_001` returned the trace
+   (`inspect_capture`, `decide_capture` with `glare_over_text_frac` 0.9211 choosing the
+   `glare_over_total` retake, `request_recapture`).
 4. Open `$BASE/` in a browser, paste the token, and check that a posted `not_doc.jpg` shows its
-   overlay and can be rejected.
-5. Then, and only then: add the URL to the README's Deployment section and the Devpost "Try it
-   out" links, and redraw the architecture diagram's AWS band with the EC2 node solid.
+   overlay and can be rejected. **Not yet done.** This step is the owner's: the token is in the
+   instance's system log and belongs to the owner, and no automation or assistant reads or
+   copies it. Its result is recorded here once the owner has done it.
+5. Add the URL to the README's Deployment section and the Devpost "Try it out" links, and redraw
+   the architecture diagram's AWS band with the EC2 node solid. The README and the diagram were
+   updated on 2026-09-28, after step 3 and with step 4 still pending; the Devpost copy is in
+   [`submission.md`](./submission.md).
 
 ### Exposure, cost and teardown
 
@@ -103,10 +144,11 @@ log. First boot takes a few minutes (the image build downloads the pinned wheels
   casual callers, not from someone observing the network between the reviewer and the
   instance.
 - **State is in memory:** a container restart empties the batch.
-- **Cost:** `t3.micro` is free-tier eligible; AWS also bills public IPv4 addresses hourly. The
-  account is on AWS's Free Plan; check the Billing console that the instance is covered. Any
-  cost beyond that is the owner's decision.
-- **Teardown** after judging: terminate `secondlook-demo`, then delete `secondlook-demo-sg`.
+- **Cost:** the account is on AWS's Free Plan, which never charges a card: usage draws down its
+  promotional credits. `t3.micro` Linux on-demand in Sydney is $0.0132 per hour, and AWS bills
+  the public IPv4 address hourly too. Any cost beyond the credits is the owner's decision.
+- **Teardown** after judging ends on 9 Nov 2026: terminate `secondlook-demo`, then delete
+  `secondlook-demo-sg`.
 
 ## Lambda + Function URL
 
@@ -114,7 +156,8 @@ The designed target: one AWS Lambda function, packaged as a container image on a
 (Graviton2), 2048 MB, Python 3.13, behind a Lambda Function URL — no ALB, nothing billing while
 idle, upgrading to S3-backed capture storage later.
 
-**Status: attempted 2026-09-17, blocked — not a code or config problem.** The owner's only
+**Status: attempted 2026-09-17, blocked — not a code or config problem**, and the reason the
+live endpoint runs on EC2 instead. The owner's only
 available AWS account is a "Project" under AWS's Free Plan (Builder ID) product, which sits
 inside an AWS-managed Organization the account holder cannot see or administer
 (`settings.aws.com/projects`). That Organization's Service Control Policy explicitly denies
@@ -361,10 +404,11 @@ adding an AWS Budget alarm is a named follow-up, not built here.
 
 - **In-memory state**: `AgentLoop` lives only for one process (EC2) or one warm Lambda
   execution environment. No persistence exists until the planned S3-backed `store.py` is built.
-- **Cold start**: unmeasured until a real deploy; the design estimate for a roughly
-  300–400 MB OpenCV container image is a few seconds cold, well under half a second warm.
+- **Lambda cold start**: unmeasured, because the function was never created; the design
+  estimate for a roughly 300–400 MB OpenCV container image is a few seconds cold, well under
+  half a second warm.
 - **`deploy/handler.py` is the Lambda adapter**, a thin translation onto
   `src/secondlook/service.py`; a planned `src/secondlook/handler.py` would only move it.
-- **The EC2 image has not been built yet**: its first build is the instance's first boot.
-  Docker was not running on the machine this was prepared on, so the verification output
-  above is what establishes that it works.
+- **The EC2 image's first build was the instance's first boot**, on 2026-09-28. Docker was not
+  running on the machine the deploy was prepared on, so the step-3 output above is what
+  establishes that it works.
