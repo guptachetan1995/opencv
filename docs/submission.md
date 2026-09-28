@@ -57,10 +57,17 @@ https://guptachetan1995.github.io/opencv/
 
 ### Field: Image gallery — new first image
 
-File `docs/hero.jpg`. Caption:
+File `docs/hero.jpg`, first in the gallery. Caption (Devpost caps captions at 140 characters):
 
 ```
-What OpenCV 5 measured, and the next call it chose: glare over the total gets a retake with a hint box; the retake fixes the glare but clips the bottom edge, so a different rule asks again; a frame with no document goes to a person. Drawn from a real run by tools/make_hero.py.
+What OpenCV 5 measured and the call it chose: glare gets a retake, a clipped retake trips a different rule, a non-document goes to a person.
+```
+
+The architecture image is the video's `arch-aws` frame, replacing the earlier one that called
+the Lambda handler "built, not deployed". Caption:
+
+```
+Architecture: one invoke() chokepoint behind every route, live on AWS EC2 at 32.236.165.113; the Lambda path is built but blocked by policy.
 ```
 
 ### Field: Prize opt-in
@@ -222,19 +229,18 @@ make run  (server and review page on http://127.0.0.1:8080/; prints a reviewer t
 - [ ] `deploy.md` step 4 — the owner pastes the reviewer token into the review page, posts
       `not_doc.jpg`, sees its overlay and rejects it; not yet recorded
 - [x] Static replay live on GitHub Pages — <https://guptachetan1995.github.io/opencv/>
-- [ ] Public repository republished with this version, so the README's Deployment section,
-      `deploy.md`'s step-3 output and the redrawn diagram that the story and the testing
-      instructions point at are on github.com/guptachetan1995/opencv (on 2026-09-28 its README
-      still said there was no live endpoint) — before any field below is pasted
-- [ ] The Devpost fields above pasted in: story, built-with, "Try it out" links (the EC2
-      endpoint and the Pages replay added), gallery hero
-- [ ] The Additional-info fields above pasted in: Working web endpoint, the new Testing
-      instructions (the ones on Devpost on 2026-09-28 give an out-of-date test count, point at
-      paths that are not in this repository, and say there is no live endpoint), Repository
-      URL, and **Agentic Vision Award selected in the prize opt-in select** — not only in
-      "Special Award Consideration", which on 2026-09-28 was the only field that named it
-- [ ] Re-cut video rendered from [`video-script.md`](./video-script.md) — whose `arch-aws` line
-      now says the EC2 path is live, so any earlier render is stale, and whose `close` card
-      now carries the endpoint URL — uploaded as Public, and its link swapped in
+- [x] Public repository republished with this version on 2026-09-28, before any field below
+      was pasted: the README's Deployment section, `deploy.md`'s step-3 output and the redrawn
+      diagram are on github.com/guptachetan1995/opencv
+- [x] The Devpost fields above pasted in on 2026-09-28: story, built-with, "Try it out" links
+      (the EC2 endpoint and the Pages replay added), the hero first in the gallery and the
+      architecture image replaced, ten captioned images
+- [x] The Additional-info fields above pasted in on 2026-09-28: Working web endpoint, the new
+      Testing instructions, Repository URL, a fresh source archive of the published tree, and
+      **Agentic Vision Award selected in the prize opt-in select** (on 2026-09-28 it had been
+      named only in "Special Award Consideration")
+- [ ] Re-cut video rendered from [`video-script.md`](./video-script.md) on 2026-09-28 (4:01;
+      `arch-aws` says the EC2 path is live, the `close` card carries the endpoint URL) —
+      uploaded as Public, and its link swapped in
 - [ ] After judging ends (9 Nov 2026): terminate `secondlook-demo`, then delete
       `secondlook-demo-sg` ([`deploy.md`](./deploy.md#exposure-cost-and-teardown))
