@@ -41,7 +41,7 @@ anywhere: no email, no accounting integration, no payment.
 
 **Submitted** on 2026-09-17 —
 [devpost.com/software/second-look-0l5bas](https://devpost.com/software/second-look-0l5bas).
-**Demo video:** <https://youtu.be/zOfV23uB8Ts>
+**Demo video (4:01):** <https://youtu.be/j3dhhLk-Y7o>
 
 **Try it live:** <http://32.236.165.113/> — the same server on one AWS EC2 instance in Sydney,
 plain HTTP, since 2026-09-28. The page there is the review queue, empty until something

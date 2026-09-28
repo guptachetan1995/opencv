@@ -17,7 +17,7 @@ attached to it. The entry was submitted on 2026-09-17 and stays editable until t
 | Code repository | [github.com/guptachetan1995/opencv](https://github.com/guptachetan1995/opencv) — **public** | Public since 2026-09-18; GitHub detects the licence as MIT |
 | Live web endpoint | <http://32.236.165.113/> — one EC2 `t3.micro` in `ap-southeast-2` (Sydney), plain HTTP | **EC2: live since 2026-09-28**; the verification output is in [`deploy.md`](./deploy.md#after-launch) (step 3); step 4, the review-page check with the reviewer token, is the owner's and not yet recorded. **Lambda: blocked** — attempted 2026-09-17; the only available AWS account's Free Plan Organization policy denies `ecr:CreateRepository` and `lambda:CreateFunction` ([`deploy.md`](./deploy.md)). A live screen-share of the review page stays on offer to judges on request, as a secondary option |
 | Static replay | <https://guptachetan1995.github.io/opencv/> — built by `./build-pages.sh <dir>` from a recorded run of the agent loop (every verdict, overlay and trace); nothing runs in the browser | Live on GitHub Pages |
-| Demo video | <https://youtu.be/zOfV23uB8Ts> — produced from the earlier version of [`video-script.md`](./video-script.md) (final render 4:28) | Submitted. A re-cut is scripted in `video-script.md` (opens on the receipts, shows the overlay and a reject); it replaces this link only once rendered and uploaded. The rules require **no more than five minutes** and the video must show **the team, the application working, its architecture, and its principal results** |
+| Demo video | <https://youtu.be/j3dhhLk-Y7o> — the re-cut rendered from [`video-script.md`](./video-script.md) (4:01), uploaded Public on 2026-09-28 | Submitted; it replaced the 4:28 original on the Devpost page. The rules require **no more than five minutes** and the video must show **the team, the application working, its architecture, and its principal results** |
 | Architecture diagram | [`docs/architecture.svg`](./architecture.svg) (source [`architecture.mmd`](./architecture.mmd), walkthrough [`architecture.md`](./architecture.md)) | Ready |
 | Agent workflow diagram | [`docs/agent-workflow.svg`](./agent-workflow.svg) (source [`agent-workflow.mmd`](./agent-workflow.mmd), walkthrough [`agent-workflow.md`](./agent-workflow.md)) | Ready |
 | Technical report | [`docs/report.md`](./report.md) — problem, users, architecture, OpenCV 5 implementation, AWS deployment, evaluation, limitations, responsible use | Ready |
@@ -215,7 +215,7 @@ make run  (server and review page on http://127.0.0.1:8080/; prints a reviewer t
 - [x] Submitted on Devpost on 2026-09-17, ahead of the **Oct 26, 2026 @ 11:45pm PDT**
       deadline — [devpost.com/software/second-look-0l5bas](https://devpost.com/software/second-look-0l5bas)
 - [x] Demo video on YouTube, linked from the Devpost submission —
-      <https://youtu.be/zOfV23uB8Ts>
+      <https://youtu.be/j3dhhLk-Y7o> (the 4:01 re-cut, since 2026-09-28)
 - [x] Repository public, so judges need no access grant —
       [github.com/guptachetan1995/opencv](https://github.com/guptachetan1995/opencv)
 - [x] Devpost page completed 2026-09-27: the story opens with the repository link and the
@@ -239,8 +239,8 @@ make run  (server and review page on http://127.0.0.1:8080/; prints a reviewer t
       Testing instructions, Repository URL, a fresh source archive of the published tree, and
       **Agentic Vision Award selected in the prize opt-in select** (on 2026-09-28 it had been
       named only in "Special Award Consideration")
-- [ ] Re-cut video rendered from [`video-script.md`](./video-script.md) on 2026-09-28 (4:01;
-      `arch-aws` says the EC2 path is live, the `close` card carries the endpoint URL) —
-      uploaded as Public, and its link swapped in
+- [x] Re-cut video rendered from [`video-script.md`](./video-script.md) on 2026-09-28 (4:01;
+      `arch-aws` says the EC2 path is live, the `close` card carries the endpoint URL),
+      uploaded Public as <https://youtu.be/j3dhhLk-Y7o> and swapped in on Devpost
 - [ ] After judging ends (9 Nov 2026): terminate `secondlook-demo`, then delete
       `secondlook-demo-sg` ([`deploy.md`](./deploy.md#exposure-cost-and-teardown))

@@ -1,10 +1,10 @@
 # Second Look — demo video script and shot list (the re-cut)
 
-**Status: scripted, not yet rendered.** The published video, <https://youtu.be/zOfV23uB8Ts>
-(4:28), was made from the earlier version of this file. This version is the re-cut: it opens
-on the receipts instead of a terminal, shows the evidence overlay and the review page's new
-controls, rejects the non-receipt instead of approving it, and shows the agent being refused.
-It replaces the published link only once it has been rendered, checked and uploaded.
+**Status: rendered and published.** This re-cut was rendered on 2026-09-28 (4:01) and is the
+submission video, <https://youtu.be/j3dhhLk-Y7o>. It replaced the 4:28 original, which was made from the earlier
+version of this file. The re-cut opens on the receipts instead of a terminal, shows the
+evidence overlay and the review page's new controls, rejects the non-receipt instead of
+approving it, and shows the agent being refused.
 
 Every frame is either the entry's real running app or a real build of it, and every line of
 terminal text is captured from a real run at render time — nothing on screen is typed by hand.
@@ -88,7 +88,7 @@ working (beats 2–6), its architecture (beat 7), its principal results (beat 8)
 **The EC2 instance was launched on 2026-09-28 and its verification output is recorded in
 `deploy.md`**, so the diagram now draws the EC2 node solid and `arch-aws` says the same routes
 are live on EC2 (25 spoken words against the earlier line's 26, inside the same 12 s). The
-video needs a re-render from this version before the re-cut is uploaded. The `close` card is
+re-cut was rendered from this version on 2026-09-28 and is the submission video. The `close` card is
 not read from the shot list above: the render script draws it, and it now carries the live
 endpoint URL above the repository and Devpost links, with the screen-share as a secondary offer.
 

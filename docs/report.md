@@ -459,7 +459,7 @@ For the six general criteria:
 | Innovation | 20% | § 1's framing (latency-to-knowing, not recognition accuracy) and § 4's use of `glare_over_text_frac` and `code_decoded` as *decision* inputs |
 | Real-world impact | 20% | § 1 and § 2 — the cost asymmetry that makes silent accepts the expensive error |
 | User experience | 10% | § 2, plus `app/static/review.html` (the evidence overlay, the clause that fired, Approve / Reject / resolve-duplicate) and the per-capture instruction with a hint box; the README's hero image |
-| Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, <https://youtu.be/zOfV23uB8Ts>, scripted in [`video-script.md`](./video-script.md) |
+| Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, <https://youtu.be/j3dhhLk-Y7o>, scripted in [`video-script.md`](./video-script.md) |
 | Cloud delivery, reproducibility, responsible operation | 10% | § 5 — the same routes live on EC2 at <http://32.236.165.113/>, with the verification output in [`deploy.md`](./deploy.md); the Lambda path is built, tested and **blocked** by the only available account's Free Plan guardrail (attempt log in `deploy.md`); rollback documented regardless; the hash-pinned locks; § 8 |
 
 For the five Agentic Vision Award rubric lines:
@@ -470,4 +470,4 @@ For the five Agentic Vision Award rubric lines:
 | Orchestration and appropriate autonomy | 25% | § 3 (the actor guard and the state guard), the 11-rule cascade, and `persistent_defect` stopping the loop after two retakes |
 | Task effectiveness and evaluation | 20% | § 6 — 15/15 task success isolated and 9/15 in one shared batch, 0/15 silent accepts in both, 5/6 retake convergence |
 | Failure handling, observability, security, human control | 15% | § 7 (four named failure cases), the trace (`GET /trace/:id`, `caused_by` chain), § 8 |
-| User experience, documentation, and demonstration | 10% | § 2 and this report; the **demonstration** evidence is `tools/run_demo.py`'s printed trace, backed by the submission video, <https://youtu.be/zOfV23uB8Ts> |
+| User experience, documentation, and demonstration | 10% | § 2 and this report; the **demonstration** evidence is `tools/run_demo.py`'s printed trace, backed by the submission video, <https://youtu.be/j3dhhLk-Y7o> |
