@@ -13,10 +13,13 @@ Four passes:
      `clean_a`'s hash) — plus a simulated human review of every capture that escalates,
      with approval latency read from the trace's own timestamps.
   2. A dedicated retake-convergence sequence set.
-  3. A batch-collision run: the whole manifest through ONE shared batch, which is what
-     actually happens if several receipts sharing a synthetic template land in one open
-     batch. This is measured behaviour from a real run, not a hand-typed illustration —
-     see `docs/evaluation.md`'s Failure Case 1.
+  3. A shared-batch run: the whole manifest through ONE batch in manifest order, which is
+     what actually happens if several receipts sharing a synthetic template land in one
+     open batch. It is reported in the headline next to the isolated numbers, and its
+     collisions are Failure Case 1.
+  4. Set R, real photographs, when `data/real/manifest.json` exists (see
+     `docs/real-photo-set.md` for the collection protocol). It does not exist yet, and the
+     report says so rather than skipping the section.
 
     make setup && .venv/bin/python -m eval.run_eval    # from the repository root
 
@@ -43,6 +46,7 @@ from secondlook import AgentLoop, process_capture  # noqa: E402
 from secondlook.agent_loop import invoke  # noqa: E402
 
 DATA = ENTRY / "data" / "synthetic"
+REAL = ENTRY / "data" / "real"
 DEFAULT_OUT = ENTRY / "docs" / "evaluation.md"
 
 # A short, deliberate pause before each simulated reviewer call, so the trace's own
@@ -135,6 +139,49 @@ class CollisionRow:
     nearest_distance: int
     duplicate_of: str | None
     expected: dict[str, Any]
+
+
+@dataclass
+class SharedBatch:
+    collisions: list[CollisionRow]
+    with_gt: int
+    matches: int
+    silent_accept_ids: list[str]
+
+
+@dataclass
+class RealResult:
+    sample_id: str
+    defect: str
+    label: str
+    outcome: str
+    rule_id: str
+
+
+@dataclass
+class RealStats:
+    results: list[RealResult]
+    licence: str
+    consent: str
+
+    @property
+    def total(self) -> int:
+        return len(self.results)
+
+    def count(self, *, label: str | None = None, outcome: str | None = None) -> int:
+        return sum(
+            1
+            for r in self.results
+            if (label is None or r.label == label) and (outcome is None or r.outcome == outcome)
+        )
+
+    @property
+    def agree(self) -> int:
+        return sum(1 for r in self.results if r.label == r.outcome)
+
+    @property
+    def silent_accepts(self) -> int:
+        return sum(1 for r in self.results if r.outcome == "accept" and r.label != "accept")
 
 
 @dataclass
@@ -264,20 +311,28 @@ def run_retake_sequences() -> list[RetakeSequence]:
     return sequences
 
 
-def run_batch_collision(manifest: dict[str, Any]) -> list[CollisionRow]:
+def run_shared_batch(manifest: dict[str, Any]) -> SharedBatch:
     """The whole manifest through ONE shared batch, in file order — the naive reading of
-    "run the dataset through the loop". Records every sample that the manifest expects to
-    reach a non-duplicate verdict but that this shared batch escalates as a suspected
-    duplicate instead (Failure Case 1)."""
+    "run the dataset through the loop". Scores every sample against its ground truth, and
+    records each one the manifest expects to reach a non-duplicate verdict but that this
+    shared batch escalates as a suspected duplicate instead (Failure Case 1)."""
     loop = AgentLoop()
     rows: list[CollisionRow] = []
+    with_gt = matches = 0
+    silent: list[str] = []
     for s in manifest["samples"]:
         cap_id = loop.open_capture(DATA / s["file"])
         cap = process_capture(cap_id, loop=loop)
         expected = s["expected_verdict"]
+        if expected is None:
+            continue
+        with_gt += 1
+        actual = {"outcome": cap.verdict.outcome, "rule_id": cap.verdict.rule_id}
+        matches += int(actual == expected)
+        if actual["outcome"] == "accept" and expected["outcome"] != "accept":
+            silent.append(s["id"])
         if (
-            expected is not None
-            and expected["rule_id"] != "suspected_duplicate"
+            expected["rule_id"] != "suspected_duplicate"
             and cap.verdict.rule_id == "suspected_duplicate"
         ):
             rows.append(
@@ -289,7 +344,34 @@ def run_batch_collision(manifest: dict[str, Any]) -> list[CollisionRow]:
                     expected=expected,
                 )
             )
-    return rows
+    return SharedBatch(rows, with_gt, matches, silent)
+
+
+def run_real(real_dir: Path) -> RealStats | None:
+    """Set R: hand-labelled real photographs, one fresh batch per photo. Returns None when
+    no set has been collected (``<real_dir>/manifest.json`` absent). A label is the outcome
+    a person says the capture deserves — ``accept``, ``retake`` or ``escalate`` — so the
+    comparison is on outcome, not on which rule fired."""
+    manifest_path = real_dir / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    manifest = json.loads(manifest_path.read_text())
+    results: list[RealResult] = []
+    for s in manifest["samples"]:
+        if s["label"] not in ("accept", "retake", "escalate"):
+            raise ValueError(f"{s['id']}: label must be accept, retake or escalate")
+        loop = AgentLoop()
+        cap = process_capture(loop.open_capture(real_dir / s["file"]), loop=loop)
+        results.append(
+            RealResult(
+                s["id"],
+                s.get("defect", "unlabelled"),
+                s["label"],
+                cap.verdict.outcome,
+                cap.verdict.rule_id,
+            )
+        )
+    return RealStats(results, manifest.get("licence", ""), manifest.get("consent", ""))
 
 
 def compute_stats(results: list[SampleResult]) -> Stats:
@@ -334,8 +416,9 @@ def render_markdown(
     results: list[SampleResult],
     reviews: list[ReviewResult],
     sequences: list[RetakeSequence],
-    collisions: list[CollisionRow],
+    shared: SharedBatch,
     stats: Stats,
+    real: RealStats | None = None,
 ) -> str:
     # Pull real provenance (OpenCV version, engine) from an actual measurement rather than
     # hardcoding it, so the report states which OpenCV build and DNN engine produced it.
@@ -383,14 +466,22 @@ def render_markdown(
         "`expected_verdict`; the other 2 (`blur_1`, `blur_2`) exist only for "
         "`test_metrics.py`'s monotonic-focus assertion and carry no verdict ground truth."
     )
-    w(
-        "- **R — real photographs.** Not evaluated here. Vendoring a real set — a CORD "
-        "subset (CC BY 4.0) or owner-shot photos — is a separate owner decision that has "
-        "not been taken; `data/real/` does not exist yet. This is Limitation 1 below, not "
-        "glossed over."
-    )
+    if real is None:
+        w(
+            "- **R — real photographs.** Not evaluated here: no real set has been collected "
+            "yet, and `data/real/` does not exist. The collection protocol (how many photos, "
+            "which conditions, consent and masking, the label format) is written down in "
+            "`docs/real-photo-set.md`; once `data/real/manifest.json` exists, this harness "
+            "scores it automatically in a section of its own. This is Limitation 1 below, "
+            "not glossed over."
+        )
+    else:
+        w(
+            f"- **R — real photographs.** `data/real/manifest.json`, {real.total} hand-labelled "
+            "photos, scored in the Set R section below."
+        )
     w("")
-    w("## Headline metrics (set S, isolated per-sample methodology)")
+    w("## Headline metrics (set S: isolated per sample, and one shared batch)")
     w("")
     w(
         '"Isolated" means one fresh batch per sample — the same methodology '
@@ -434,6 +525,17 @@ def render_markdown(
         f"({_pct(converged, len(sequences))})** | fraction of the dedicated sequence set "
         "(below) reaching `accept` within two retakes |"
     )
+    w(
+        f"| Task-success rate, **shared batch** | **{shared.matches}/{shared.with_gt} "
+        f"({_pct(shared.matches, shared.with_gt)})** | the same samples through ONE batch in "
+        "manifest order; lower because receipts sharing a template collide as suspected "
+        "duplicates (Failure Case 1) |"
+    )
+    w(
+        f"| Silent-accept rate, **shared batch** | **{len(shared.silent_accept_ids)}/"
+        f"{shared.with_gt} ({_pct(len(shared.silent_accept_ids), shared.with_gt)})** | every "
+        "collision escalates to a person; none is accepted |"
+    )
     if reviews:
         latencies = sorted(r.latency_ms for r in reviews)
         w(
@@ -441,6 +543,20 @@ def render_markdown(
             f"max {latencies[-1]:.1f} ms | `reviewer entry.at - escalate entry.at`, read "
             "from the trace itself — see the caveat below |"
         )
+    w("")
+    w(
+        "Both methodologies are reported because they answer different questions. The "
+        "isolated pass is how the manifest's ground truth was written (one receipt, one "
+        "batch). The shared batch shows what happens when captures sharing one printed "
+        "layout land in the same batch; most samples here are one layout re-rendered with a "
+        "different defect, so it is a stress case, and how often real receipts collide is "
+        "not measured: "
+        f"{len(shared.collisions)} of {shared.with_gt} samples escalate as suspected "
+        "duplicates of an already-accepted receipt with the same printed layout. For example "
+        "`glare_text` posted after `clean_a` in one batch escalates as `suspected_duplicate` "
+        "instead of asking for a retake. It costs a person's attention, never a silent "
+        "accept."
+    )
     w("")
     w(
         f"Silent-accept rate is **{len(stats.silent_accept_ids)}/{stats.with_gt}** on set "
@@ -535,15 +651,15 @@ def render_markdown(
     w("")
     w(
         'Running the entire manifest through ONE shared batch (the plain reading of "run '
-        'the dataset through the loop", `run_batch_collision` in `eval/run_eval.py`) '
+        'the dataset through the loop", `run_shared_batch` in `eval/run_eval.py`) '
         "produces "
-        f"{len(collisions)} captures that escalate as `suspected_duplicate` even though the "
-        "manifest's own ground truth expects a different verdict:"
+        f"{len(shared.collisions)} captures that escalate as `suspected_duplicate` even "
+        "though the manifest's own ground truth expects a different verdict:"
     )
     w("")
     w("| Sample | Base | `nearest_distance` | `duplicate_of` | Manifest expected |")
     w("|---|---|---|---|---|")
-    for c in collisions:
+    for c in shared.collisions:
         w(
             f"| `{c.sample_id}` | `{c.base}` | {c.nearest_distance} | `{c.duplicate_of}` | "
             f"{c.expected['outcome']}/{c.expected['rule_id']} |"
@@ -610,15 +726,18 @@ def render_markdown(
         "correct answer here, not a defect."
     )
     w("")
+    if real is not None:
+        _render_real(w, real)
     w("## Limitations")
     w("")
-    w(
-        "- **No real-photograph set (R).** Vendoring `data/real/` is an owner decision "
-        "not yet taken; every number in this report is set S (synthetic) only. "
-        "Verdict-agreement against hand labels, and a real escalation-precision case where "
-        "a reviewer actually *disagrees* with an escalation, both need R and are not "
-        "measured here."
-    )
+    if real is None:
+        w(
+            "- **No real-photograph set (R).** No real set has been collected yet (protocol: "
+            "`docs/real-photo-set.md`); every number in this report is set S (synthetic) "
+            "only. Verdict agreement against hand labels, and a real escalation-precision "
+            "case where a reviewer actually *disagrees* with an escalation, both need R and "
+            "are not measured here."
+        )
     w(
         "- **Approval latency is simulated,** not measured against a real reviewer — see "
         "the caveat under Simulated human review above."
@@ -651,20 +770,65 @@ def render_markdown(
     return "\n".join(lines) + "\n"
 
 
+def _render_real(w: Any, real: RealStats) -> None:
+    w("## Set R — real photographs")
+    w("")
+    w(
+        f"{real.total} hand-labelled photos from `data/real/manifest.json`, one fresh batch "
+        "each. A label is the outcome a person says the capture deserves; the comparison is "
+        f"on outcome, not rule. Licence: {real.licence or 'not stated'}. Consent: "
+        f"{real.consent or 'not stated'}."
+    )
+    w("")
+    n_accept = real.count(label="accept")
+    n_bad = real.total - n_accept
+    w("| Metric | Value | How |")
+    w("|---|---|---|")
+    w(
+        f"| Outcome agreement | **{real.agree}/{real.total} ({_pct(real.agree, real.total)})** "
+        "| the loop's outcome equals the hand label |"
+    )
+    w(
+        f"| **Silent-accept rate** | **{real.silent_accepts}/{n_bad} "
+        f"({_pct(real.silent_accepts, n_bad)})** | accepted, but labelled retake or escalate |"
+    )
+    retake_good = real.count(label="accept", outcome="retake")
+    escalate_good = real.count(label="accept", outcome="escalate")
+    w(
+        f"| Unneeded retake rate | {retake_good}/{n_accept} ({_pct(retake_good, n_accept)}) "
+        "| labelled accept, asked for a retake |"
+    )
+    w(
+        f"| False-escalation rate | {escalate_good}/{n_accept} "
+        f"({_pct(escalate_good, n_accept)}) | labelled accept, sent to a person |"
+    )
+    w("")
+    w("| Photo | Defect | Label | Outcome | Rule |")
+    w("|---|---|---|---|---|")
+    for r in real.results:
+        mark = "" if r.label == r.outcome else " **(disagrees)**"
+        w(f"| `{r.sample_id}` | {r.defect} | {r.label} | {r.outcome}{mark} | `{r.rule_id}` |")
+    w("")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--out", type=Path, default=DEFAULT_OUT, help="where to write the report (Markdown)"
+    )
+    parser.add_argument(
+        "--real", type=Path, default=REAL, help="set R directory (scored if manifest.json exists)"
     )
     args = parser.parse_args(argv)
 
     manifest = load_manifest()
     results, reviews = run_isolated(manifest)
     sequences = run_retake_sequences()
-    collisions = run_batch_collision(manifest)
+    shared = run_shared_batch(manifest)
     stats = compute_stats(results)
+    real = run_real(args.real)
 
-    report = render_markdown(manifest, results, reviews, sequences, collisions, stats)
+    report = render_markdown(manifest, results, reviews, sequences, shared, stats, real)
     out_path = args.out if args.out.is_absolute() else ENTRY / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report)
@@ -676,7 +840,9 @@ def main(argv: list[str] | None = None) -> int:
         f"silent-accept {len(stats.silent_accept_ids)}/{stats.with_gt} | "
         f"escalation-rate {_pct(stats.outcome_counts.get('escalate', 0), stats.total)} | "
         f"retake-convergence {converged}/{len(sequences)} | "
-        f"batch-collisions {len(collisions)}"
+        f"shared-batch {shared.matches}/{shared.with_gt} | "
+        f"batch-collisions {len(shared.collisions)}"
+        + (f" | set-R agreement {real.agree}/{real.total}" if real else "")
     )
     print(f"wrote {out_path.relative_to(ENTRY)}")
     return 0

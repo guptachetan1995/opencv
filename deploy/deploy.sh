@@ -12,6 +12,9 @@ IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}"
 ROLE_NAME="${FUNCTION_NAME}-execution-role"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-30}"
 MEMORY_MB="${MEMORY_MB:-2048}"
+# The reviewer token the approve / reject / resolve_duplicate routes require. Required:
+# the Function URL is public (auth-type NONE), so without a token those routes stay closed.
+REVIEWER_TOKEN="${REVIEWER_TOKEN:?set REVIEWER_TOKEN to a long random secret (the reviewer routes need it)}"
 
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export AWS_REGION AWS_PROFILE
@@ -70,15 +73,19 @@ image_uri="${ecr_uri}:${IMAGE_TAG##*:}"
 if aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$FUNCTION_NAME" --image-uri "$image_uri" >/dev/null
   aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+  aws lambda update-function-configuration --function-name "$FUNCTION_NAME" \
+    --environment "Variables={REVIEWER_TOKEN=${REVIEWER_TOKEN}}" >/dev/null
+  aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 else
   aws lambda create-function --function-name "$FUNCTION_NAME" \
     --package-type Image --code "ImageUri=${image_uri}" \
     --role "$role_arn" --architectures arm64 \
+    --environment "Variables={REVIEWER_TOKEN=${REVIEWER_TOKEN}}" \
     --timeout "$TIMEOUT_SECONDS" --memory-size "$MEMORY_MB" >/dev/null
   aws lambda wait function-active --function-name "$FUNCTION_NAME"
 fi
 
-# --- Function URL (create if missing; public, unauthenticated — see docs/deploy.md) --
+# --- Function URL (create if missing; public — the reviewer routes need REVIEWER_TOKEN) --
 if ! aws lambda get-function-url-config --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
   aws lambda create-function-url-config --function-name "$FUNCTION_NAME" --auth-type NONE >/dev/null
   # Required once for a public Function URL to actually be reachable: without this

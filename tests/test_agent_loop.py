@@ -18,6 +18,7 @@ from secondlook.agent_loop import (
     READ_TOOLS,
     AgentLoop,
     Capture,
+    StateError,
     invoke,
     process_capture,
 )
@@ -176,6 +177,181 @@ def test_escalation_waits_until_approved_then_resumes():
     resumed = loop.captures[dup_id]
     assert resumed.state == "accepted"
     assert [e.actor for e in resumed.trace[-2:]] == ["reviewer", "reviewer"]
+
+
+# ---- the gate holds against the agent's own tools, not only against process_capture ------
+
+
+def _escalated_duplicate() -> tuple[AgentLoop, str]:
+    loop = AgentLoop()
+    process_capture(loop.open_capture(DATA / "clean_a.jpg"), loop=loop)
+    dup_id = loop.open_capture(DATA / "dup_a.jpg")
+    assert process_capture(dup_id, loop=loop).state == "escalated"
+    return loop, dup_id
+
+
+def test_agent_tools_cannot_move_an_escalated_capture():
+    """The escape a review of the published code found, reproduced call for call:
+    `decide_capture` on an escalated duplicate moved it back to "measured", and
+    `request_recapture` then opened a successor slot whose clean photo auto-accepted — out
+    of the review queue with no person involved. Every agent tool now refuses it."""
+    loop, dup_id = _escalated_duplicate()
+    trace_len = len(loop.captures[dup_id].trace)
+    capture_count = len(loop.captures)
+    calls = [
+        ("inspect_capture", {"capture_id": dup_id}),
+        ("decide_capture", {"capture_id": dup_id}),
+        ("request_recapture", {"capture_id": dup_id}),
+        ("escalate", {"capture_id": dup_id, "reason": "suspected_duplicate"}),
+        ("compare_captures", {"previous_id": dup_id, "new_id": dup_id}),
+    ]
+    assert {tool for tool, _ in calls} == set(AGENT_TOOLS)
+    for tool, args in calls:
+        with pytest.raises(StateError):
+            invoke(tool, args, "agent", loop=loop)
+        assert loop.captures[dup_id].state == "escalated", tool
+    assert len(loop.captures[dup_id].trace) == trace_len  # refused, not half-applied
+    assert len(loop.captures) == capture_count  # no successor slot was opened
+    with pytest.raises(StateError):
+        loop.attach_image(dup_id, DATA / "clean_b.jpg")  # nor a photo swapped under it
+
+    # Only the reviewer's verb moves it.
+    invoke(
+        "resolve_duplicate", {"capture_id": dup_id, "is_duplicate": True}, "reviewer", loop=loop
+    )
+    assert loop.captures[dup_id].state == "rejected"
+
+
+@pytest.mark.parametrize(
+    ("sample", "state"), [("clean_b", "accepted"), ("glare_text", "awaiting_retake")]
+)
+def test_agent_tools_refuse_decided_and_waiting_captures(sample: str, state: str):
+    loop = AgentLoop()
+    cap_id = loop.open_capture(DATA / f"{sample}.jpg")
+    assert process_capture(cap_id, loop=loop).state == state
+    capture_count = len(loop.captures)
+    for tool, args in (
+        ("inspect_capture", {"capture_id": cap_id}),
+        ("decide_capture", {"capture_id": cap_id}),
+        ("request_recapture", {"capture_id": cap_id}),
+        ("escalate", {"capture_id": cap_id, "reason": "uncertain_band"}),
+    ):
+        with pytest.raises(StateError):
+            invoke(tool, args, "agent", loop=loop)
+    assert loop.captures[cap_id].state == state
+    assert len(loop.captures) == capture_count
+
+
+def test_agent_tools_refuse_a_rejected_capture():
+    loop = AgentLoop()
+    cap_id = loop.open_capture(DATA / "not_doc.jpg")
+    process_capture(cap_id, loop=loop)
+    invoke("reject", {"capture_id": cap_id, "note": "not a receipt"}, "reviewer", loop=loop)
+    with pytest.raises(StateError):
+        invoke("decide_capture", {"capture_id": cap_id}, "agent", loop=loop)
+    assert loop.captures[cap_id].state == "rejected"
+
+
+def test_request_recapture_needs_a_retake_verdict_and_keeps_its_metric():
+    loop = AgentLoop()
+    escalating = loop.open_capture(DATA / "not_doc.jpg")
+    invoke("inspect_capture", {"capture_id": escalating}, "agent", loop=loop)
+    invoke("decide_capture", {"capture_id": escalating}, "agent", loop=loop)
+    assert loop.captures[escalating].state == "measured"  # decided escalate, not yet acted on
+    with pytest.raises(StateError):
+        invoke("request_recapture", {"capture_id": escalating}, "agent", loop=loop)
+
+    retaking = loop.open_capture(DATA / "glare_text.jpg")
+    invoke("inspect_capture", {"capture_id": retaking}, "agent", loop=loop)
+    verdict = invoke("decide_capture", {"capture_id": retaking}, "agent", loop=loop)
+    with pytest.raises(ValueError):  # the agent may restate the failing metric, not swap it
+        invoke(
+            "request_recapture",
+            {"capture_id": retaking, "failing_metric": "focus_min_tile"},
+            "agent",
+            loop=loop,
+        )
+    successor_id = invoke("request_recapture", {"capture_id": retaking}, "agent", loop=loop)
+    entry = loop.captures[retaking].trace[-1]
+    assert entry.inputs == {"failing_metric": "glare_over_text_frac"}
+    assert entry.outputs == {"hint_box": verdict.hint_box, "successor_id": successor_id}
+
+
+def test_escalate_keeps_the_verdicts_reason_so_a_duplicate_cannot_be_relabelled():
+    """A second escape, found reviewing the first fix: escalating a suspected duplicate
+    under a harmless reason let the reviewer's approve accept it without the duplicate
+    question. escalate now refuses a reason that is not the verdict's own, and refuses any
+    capture whose verdict is not 'escalate'."""
+    loop = AgentLoop()
+    process_capture(loop.open_capture(DATA / "clean_a.jpg"), loop=loop)
+    dup_id = loop.open_capture(DATA / "dup_a.jpg")
+    invoke("inspect_capture", {"capture_id": dup_id}, "agent", loop=loop)
+    verdict = invoke("decide_capture", {"capture_id": dup_id}, "agent", loop=loop)
+    assert verdict.rule_id == "suspected_duplicate"
+    with pytest.raises(ValueError):
+        invoke("escalate", {"capture_id": dup_id, "reason": "uncertain_band"}, "agent", loop=loop)
+    assert loop.captures[dup_id].state == "measured"
+    assert [e.action for e in loop.captures[dup_id].trace][-1] == "decide_capture"
+
+    invoke("escalate", {"capture_id": dup_id}, "agent", loop=loop)  # the reason is the verdict's
+    assert loop.captures[dup_id].review_reason == "suspected_duplicate"
+    assert loop.captures[dup_id].trace[-1].inputs == {"reason": "suspected_duplicate"}
+    with pytest.raises(RuntimeError):
+        invoke("approve", {"capture_id": dup_id}, "reviewer", loop=loop)
+
+    # A fresh batch: in this one glare_text would collide with clean_a's printed layout.
+    fresh = AgentLoop()
+    retaking = fresh.open_capture(DATA / "glare_text.jpg")
+    invoke("inspect_capture", {"capture_id": retaking}, "agent", loop=fresh)
+    assert invoke("decide_capture", {"capture_id": retaking}, "agent", loop=fresh).outcome == (
+        "retake"
+    )
+    with pytest.raises(StateError):  # a retake verdict is not the agent's to escalate
+        invoke("escalate", {"capture_id": retaking}, "agent", loop=fresh)
+    assert fresh.captures[retaking].state == "measured"
+
+
+def test_approve_asks_the_duplicate_question_from_the_verdict_too():
+    """Belt and braces: even a capture whose escalation label is not 'suspected_duplicate'
+    cannot be approved while its verdict's rule is, until the reviewer resolves it."""
+    loop, dup_id = _escalated_duplicate()
+    loop.captures[dup_id].review_reason = "uncertain_band"  # the label the old gap allowed
+    with pytest.raises(RuntimeError):
+        invoke("approve", {"capture_id": dup_id}, "reviewer", loop=loop)
+    invoke(
+        "resolve_duplicate", {"capture_id": dup_id, "is_duplicate": False}, "reviewer", loop=loop
+    )
+    invoke("approve", {"capture_id": dup_id}, "reviewer", loop=loop)
+    assert loop.captures[dup_id].state == "accepted"
+
+
+def test_get_capture_returns_a_copy_not_the_live_capture():
+    loop, dup_id = _escalated_duplicate()
+    view = invoke("get_capture", {"capture_id": dup_id}, "agent", loop=loop)
+    assert view is not loop.captures[dup_id]
+    assert "image_path" not in view
+
+    view["state"] = "accepted"
+    view["verdict"]["outcome"] = "accept"
+    view["measurements"]["glare_boxes"].append([0, 0, 1, 1])
+
+    cap = loop.captures[dup_id]
+    assert cap.state == "escalated"
+    assert cap.verdict.outcome == "escalate"
+    assert [0, 0, 1, 1] not in cap.measurements.glare_boxes
+
+
+def test_attach_image_only_fills_an_open_retake_slot():
+    loop = AgentLoop()
+    first_id = loop.open_capture(DATA / "glare_text.jpg")
+    with pytest.raises(StateError):  # a first capture is not a retake slot
+        loop.attach_image(first_id, DATA / "clean_a.jpg")
+    first = process_capture(first_id, loop=loop)
+    successor_id = _successor_of(first)
+    loop.attach_image(successor_id, DATA / "crop_bottom.jpg")
+    process_capture(successor_id, loop=loop)
+    with pytest.raises(StateError):  # once a tool has measured the slot, its photo is fixed
+        loop.attach_image(successor_id, DATA / "clean_a.jpg")
 
 
 def test_reject_path_ends_the_capture():

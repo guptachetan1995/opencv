@@ -118,7 +118,8 @@ def inspect_file(path: str | Path, **kwargs) -> Measurements:
         # it just isn't decodable image data. Both app/server.py and deploy/handler.py
         # already turn a ValueError into a clean 409 "the request is invalid" response —
         # raising the wrong exception type here previously fell through to a bare 500.
-        raise ValueError(f"could not decode an image at {path}")
+        # No path in the message: over HTTP it would name the server's upload directory.
+        raise ValueError("could not decode the photo: not a JPEG, PNG or other image format")
     pixels = bgr.shape[0] * bgr.shape[1]
     if pixels > MAX_DECODED_PIXELS:
         raise ValueError(

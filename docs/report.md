@@ -14,20 +14,22 @@ Companion documents: [`architecture.md`](./architecture.md) and
 number quoted here), [`deploy.md`](./deploy.md) (the deployment runbook), and
 [`submission.md`](./submission.md).
 
-**Live endpoint:** none — deployment was attempted and is **blocked**, not merely
-pending. The only AWS account available for this submission denies resource creation
-(`ecr:CreateRepository`, `lambda:CreateFunction`) via an Organization-level Service
-Control Policy tied to its Free Plan tier. See § 5 for the full attempt and
-[`deploy.md`](./deploy.md) for the real error output.
+**Live endpoint:** none yet. The Lambda deployment was attempted and is **blocked**: the
+only AWS account available for this submission denies `ecr:CreateRepository` and
+`lambda:CreateFunction` via an Organization-level Service Control Policy tied to its Free Plan
+tier. An EC2 console deploy of the same routes is prepared for the owner to launch. See § 5,
+and [`deploy.md`](./deploy.md) for the real error output and every console field. Until an
+endpoint serves, a live screen-share of the running local server is available to judges on
+request via a Devpost message.
 
 ---
 
 ## 1. Problem
 
-Fieldwork Collective is a nine-person surveying and site-inspection firm. Everyone is out of
-the office most days and everyone pays for things — fuel, parking, materials, a replacement
-cable from a hardware shop. The policy is ordinary: photograph the receipt, and finance
-sorts it out at month end.
+Take a nine-person surveying and site-inspection firm — an illustrative case, not a customer
+this entry has worked with. Everyone is out of the office most days and everyone pays for
+things — fuel, parking, materials, a replacement cable from a hardware shop. The policy is
+ordinary: photograph the receipt, and finance sorts it out at month end.
 
 Month end is where the money goes. Somewhere between four and thirty days after the shutter,
 a bookkeeper opens a capture and finds a white bar of window glare lying exactly across the
@@ -37,9 +39,11 @@ surveyor is on another site in another county and the paper is in a bin. The cla
 dropped, guessed at, or bounced back to someone who cannot fix it, because the evidence no
 longer exists.
 
-The usual diagnosis is that this is an OCR problem, so firms buy an OCR product. It is not.
-OCR — and every expense tool downstream of it — runs on a capture that was already unusable
-and reports the failure at the wrong moment to the wrong person. **The expensive quantity is
+The usual diagnosis is that this is an OCR problem, so firms buy an OCR product. That misses
+where the cost comes from. Capture-time checks exist — scanner SDKs grade blur and text
+readability, and expense apps let a user retake a scan that failed (README, "What already
+exists") — but a capture that passes them, or a failure noticed only when the claim is
+processed, still reaches the bookkeeper as an unusable image. **The expensive quantity is
 the latency between a bad capture and anyone knowing it was bad**, because that latency is
 what makes the defect permanent. Two seconds after the shutter, standing in the same light,
 the surveyor can just take the photo again. Three weeks later, nobody can.
@@ -85,12 +89,17 @@ client (browser)
               → escalate → invoke("escalate", {reason}, actor="agent") → the human review lane
 ```
 
-Two entry points, one loop. `app/server.py` (stdlib `ThreadingHTTPServer`, no framework) and
-`deploy/handler.py` (Lambda Function URL, payload format 2.0) are adapters: neither holds
-decision logic, both translate a request into `process_capture` or an `invoke(...)` call and
-translate the result back. Both enforce the same `MAX_BODY_BYTES = 4 MB` guard, under
-Lambda's 6 MB synchronous payload cap, and reject an oversized body with
-`413 payload_too_large` rather than decoding a truncated buffer.
+Three entry points, one loop. The HTTP routes are written once, in
+`src/secondlook/service.py`; `app/server.py` (stdlib `ThreadingHTTPServer`, no framework — `make
+run` and the EC2 image) and `deploy/handler.py` (Lambda Function URL, payload format 2.0) are
+thin adapters that translate their request shape into one `Service.handle(...)` call. The
+routes hold no decision logic: each is a `process_capture` or `invoke(...)` call. Both HTTP
+adapters enforce the same `MAX_BODY_BYTES = 4 MB` guard, under Lambda's 6 MB synchronous payload
+cap, and reject an oversized body with `413 payload_too_large`. The third entry point,
+`app/mcp_server.py`, is a stdio MCP server that offers the agent tools (never the human verbs)
+to an LLM agent, each as the same `invoke(..., actor="agent")` call. Its two photo-arrival
+tools, `open_capture` and `attach_retake`, decide nothing and use the same ungated plumbing as
+`POST /inspect` and `POST /retake` (`AgentLoop.open_capture`, `AgentLoop.attach_image`).
 
 ### The chokepoint, and why it is checkable rather than merely documented
 
@@ -110,22 +119,36 @@ if tool in AGENT_TOOLS and actor != "agent":
 The agent has no private path to the accepted state and the human has no private path to the
 agent's tools — and because both land on the same function, the separation is a property the
 test suite can assert rather than a convention a later change can quietly erode.
+
+The actor guard alone is not enough, and an earlier version of this entry showed why: an agent
+could call `decide_capture` on an escalated capture, move it back to `measured`, request a
+retake of it, and have the retake auto-accept — out of the review queue with no person
+involved. So every agent tool also checks the capture's state and raises `StateError` unless
+it is `received` or `measured`; `request_recapture` additionally needs the capture's own
+verdict to be `retake`; and `get_capture` returns a fresh dict, never the live record.
+`tests/test_agent_loop.py` replays that exact sequence and asserts each agent tool is refused
+and the capture stays `escalated`.
 `open_capture()` and `attach_image()` are deliberately *ungated* plumbing: they create a slot
 and put bytes in it, and mutate nothing a verdict depends on except the retake `attempt`
 counter, which they derive from `parent_id` rather than accept as caller-supplied input.
+`attach_image()` refuses anything but an open, unmeasured retake slot.
 
-The review page proves the point at runtime: `app/static/review.html`'s Approve button
-`fetch()`es `POST /approve/:capture_id`, and the server's handler for that route is a call to
-`invoke("approve", …, actor="reviewer")` — the identical function the agent's own tools call,
-refused to the agent by the guard above.
+The review page proves the point at runtime: `app/static/review.html`'s Approve, Reject and
+duplicate buttons `fetch()` `POST /approve/:id`, `/reject/:id` and `/resolve_duplicate/:id`,
+and each route is a call to `invoke(verb, …, actor="reviewer")` — the identical function the
+agent's own tools call, refused to the agent by the guard above. Over HTTP the reviewer is also
+authenticated: those routes, and the photo overlay, need `Authorization: Bearer <reviewer
+token>` and answer `401` before any `invoke()` without it. The page shows each escalated
+capture's evidence overlay, the clause that fired and its key measurements, so the person
+deciding sees what the agent saw.
 
 **The diagrams are drawn as built, not as the design sketched them** before any code
 existed: solid means built and exercised by tests, dashed means planned and not built, and
 each dashed node names what it waits on.
-[`architecture.md`](./architecture.md#where-this-diverges-from-the-pre-code-design) lists all
-seven divergences (chief among them: the chokepoint is `agent_loop.invoke()`, not the separate
-apply-module the design imagined; S3, CloudWatch, the evidence overlay, the DNN text path and
-the UI's agent lane are unbuilt). Overstating what exists is a documented rejection ground for
+[`architecture.md`](./architecture.md#where-this-diverges-from-the-pre-code-design) lists the
+divergences (chief among them: the chokepoint is `agent_loop.invoke()`, not the separate
+apply-module the design imagined; S3, CloudWatch, the DNN text path and the UI's agent lane are
+unbuilt). Overstating what exists is a documented rejection ground for
 this competition, so the corrections are recorded rather than smoothed over.
 
 **No AWS COOL service is used by this entry**, so nothing COOL appears on the architecture
@@ -165,7 +188,12 @@ weights, and every `Measurements` record carries `text_detector` so any report s
 path produced it. The pre-code design wanted `dnn.TextDetectionModel_DB` on the diagram; it is
 drawn dashed as the unbuilt alternative instead of being claimed.
 
-The OpenCV output is not a display artefact — it is the input to the next decision.
+The same measurements are drawn back onto the image by `src/secondlook/overlay.py`, with OpenCV
+drawing calls: the frame with the located quad, and the page re-warped from the stored quad onto
+exactly `page_shape` with the text boxes, blur tiles, glare boxes and the verdict's hint box,
+under the clause that fired. It is rendered per request for the reviewer, never stored.
+
+But the OpenCV output is not a display artefact — it is the input to the next decision.
 `glare_over_text_frac` (not `glare_area_fraction`) is what separates "glare on white space,
 accept" from "glare across the total, retake"; `code_decoded` is a *clause* of the
 `out_of_focus` rule, so a decoded QR cancels a retake a soft-focus page would otherwise get.
@@ -191,7 +219,7 @@ repository forbids. Lambda bills nothing while idle, and its free tier — "one 
 requests and 400,000 GB-seconds per month", per <https://aws.amazon.com/lambda/pricing/> —
 covers a demo, an evaluation run and a judging window.
 
-**Four steps**, with the exact commands in [`deploy.md`](./deploy.md):
+**Four steps for Lambda**, with the exact commands in [`deploy.md`](./deploy.md):
 
 1. **Build** — `deploy/build.sh` (`docker build --platform linux/arm64`). Local, no AWS
    credential needed.
@@ -229,7 +257,16 @@ unrestricted AWS account. Neither was available: no spare email for a new accoun
 budget for the upgrade. Rather than paper over this, it's reported here plainly — the
 same standard this report holds every other limitation to. `deploy.sh`, `deploy/handler.py`
 and the container image are all built, tested locally, and ready to run unmodified the
-moment an unrestricted account exists.
+moment an unrestricted account exists. Both attempts were in `us-east-1`.
+
+**The EC2 path, prepared for the owner to launch.** Another project in the same AWS
+organization was deployed to EC2 through the console on 2026-09-11 in `ap-southeast-2`, so the
+same route table is prepared as one `t3.micro` there: `deploy/ec2/Dockerfile` (`app/server.py`
+on `python:3.13-slim`), built on first boot by `deploy/ec2/user-data.sh` from the public
+repository and served on port 80, with a reviewer token generated on the instance and never
+written into the form or the repository. [`deploy.md`](./deploy.md#ec2-console-deploy) lists
+every console field; the owner reviews them and clicks Launch, and the verification output goes
+into `deploy.md` when it exists. It has not been launched at the time of writing.
 
 ## 6. Evaluation
 
@@ -260,7 +297,9 @@ classical text detector.
 | Escalate rate | 4/17 (23.5%) |
 | Escalation precision | 4/4 (100.0%) — **with the caveat below** |
 | Retake convergence | **5/6 (83.3%)** — sequences reaching `accept` within two retakes |
-| Approval latency (simulated) | about 55 ms, p50 and max (the exact value moves by fractions of a millisecond per run) — **not a human number**; see below |
+| Task success, **shared batch** | **9/15 (60.0%)** — the same samples through one batch in manifest order |
+| Silent-accept rate, shared batch | **0/15 (0.0%)** |
+| Approval latency (simulated) | a little over the harness's scripted 50 ms pause, and it moves from run to run — **not a human number**; see below |
 
 Per-defect detection is **100.0%** on all eleven classes present in the set: `blur_global`
 (n=2), `blur_partial` (1), `crop` (1), `duplicate` (1), `exposure` (2), `faded` (1), `glare`
@@ -269,6 +308,12 @@ Per-defect detection is **100.0%** on all eleven classes present in the set: `bl
 Tool-call and human-verb counts over the isolated pass of all 17 samples: `inspect_capture`
 17, `decide_capture` 17, `request_recapture` 7, `escalate` 4, `reject` 3, `resolve_duplicate`
 1. The counts are the loop's own behaviour, read from the traces.
+
+The isolated numbers are how the ground truth was written: one receipt, one batch. Through one
+shared batch, 6 of the 15 samples collide as suspected duplicates of an already-accepted
+receipt with the same printed layout — `glare_text.jpg` posted after `clean_a.jpg` escalates
+instead of asking for a retake — so task success drops to 9/15 while the silent-accept rate
+stays 0/15: every collision goes to a person (Failure Case 1 below).
 
 Two numbers must be read with their caveats, and the report states both rather than quoting
 the round figures alone. **Approval latency is simulated**: this harness has no human in it,
@@ -322,12 +367,13 @@ Five limitations of the evaluation itself:
 
 - **No real-photograph set.** Every number is set S (synthetic). Verdict agreement against
   hand labels, and a case where a reviewer genuinely disagrees with an escalation, both need
-  a real set and are not measured.
+  a real set and are not measured. The collection protocol is
+  [`real-photo-set.md`](./real-photo-set.md), and the harness scores set R as soon as
+  `data/real/manifest.json` exists.
 - **Approval latency is simulated,** not measured against a real reviewer.
-- **Latency and cost against the deployed Lambda are unmeasured, and cannot be measured
-  for this submission.** The evaluation runs the in-memory loop locally; p50/p95 cold and
-  warm latency and a Cost Explorer figure need a live function, and deploying one is
-  blocked by the account restriction in § 5 — not merely an owner action still pending.
+- **Latency and cost against a deployed endpoint are unmeasured.** The evaluation runs the
+  in-memory loop locally; the Lambda path is blocked by the account restriction in § 5, and
+  the EC2 path has not been launched.
 - **The retake-convergence set is scripted, not sampled.** Six sequences chosen to exercise
   every retake-triggering rule plus the persistent-defect stop — not a random sample of real
   retake behaviour, because no real capture stream exists yet.
@@ -347,11 +393,16 @@ entry point.
 
 Receipts carry names, card last-four digits, addresses and locations, so:
 
-- **No pixel data and no decoded text is ever stored.** `Measurements` and `Verdict` are
-  frozen dataclasses of numbers, flags, box coordinates and rule identifiers. A QR payload is
-  dropped inside the metric that read it; only the boolean `code_decoded` survives. This is a
-  schema-level guarantee (`src/secondlook/schema.py`, asserted by `tests/test_schema.py`),
-  not a logging convention.
+- **No pixel data and no decoded text is ever stored in a record.** `Measurements` and
+  `Verdict` are frozen dataclasses of numbers, flags, box coordinates and rule identifiers. A
+  QR payload is dropped inside the metric that read it; only the boolean `code_decoded`
+  survives. This is a schema-level guarantee (`src/secondlook/schema.py`, asserted by
+  `tests/test_schema.py`), not a logging convention.
+- **The photo itself is kept only while a person needs to see it.** An upload is deleted as
+  soon as the loop has read it, unless the capture escalated; then it is held in the server's
+  temporary directory so the reviewer can see the overlay, and deleted the moment the reviewer
+  decides (at most 64 held; the oldest is deleted first). The overlay is drawn per request and
+  needs the reviewer token.
 - **Nothing is ever sent anywhere.** No email, no accounting integration, no payment, no
   third-party API. The pipeline has no network call in it at all.
 - **The irreversible decisions are human-only, and the guard in § 3 enforces it** — not by
@@ -368,14 +419,15 @@ Receipts carry names, card last-four digits, addresses and locations, so:
 - **Known-undetected cases are reported as undetected** — the moiré case above is the
   example — because overstating capability is a stated rejection ground.
 
-One deliberate, documented tradeoff: the Function URL is created with **`--auth-type NONE`**,
-i.e. public and unauthenticated, so a judge can open the endpoint without an AWS credential.
-That is a real exposure and is stated openly rather than buried: the function holds only
-synthetic demo captures, keeps nothing beyond one execution environment's lifetime, writes
-nothing outside `/tmp`, has no credentials to steal, and caps request bodies at 4 MB. The
-scope that makes it acceptable is exactly the demo scope; a production deployment would put
-IAM auth or a CloudFront signed path in front of it, and the planned S3 store assumes a
-private bucket with Block Public Access on.
+One deliberate, documented tradeoff: a public endpoint — the Function URL is created with
+**`--auth-type NONE`**, and the EC2 instance serves plain HTTP — so a judge can reach it
+without an AWS credential. That no longer exposes the human gate: approve, reject,
+resolve-duplicate and the photo overlay need the reviewer token (`REVIEWER_TOKEN`), and answer
+`401` without it. What stays public is posting a photo and reading measurements and traces.
+Over plain HTTP the token protects those routes from casual callers, not from someone
+observing the network; a production deployment would add TLS and real identity (IAM auth, or
+a sign-in in front of the review page), and the planned S3 store assumes a private bucket with
+Block Public Access on.
 
 ---
 
@@ -388,16 +440,16 @@ For the six general criteria:
 | Technical execution | 30% | § 3 (architecture and the chokepoint guard), § 4 (OpenCV 5 depth), § 6 (evaluation) |
 | Innovation | 20% | § 1's framing (latency-to-knowing, not recognition accuracy) and § 4's use of `glare_over_text_frac` and `code_decoded` as *decision* inputs |
 | Real-world impact | 20% | § 1 and § 2 — the cost asymmetry that makes silent accepts the expensive error |
-| User experience | 10% | § 2, plus `app/static/review.html`'s single-button review lane and the per-capture instruction with a hint box |
+| User experience | 10% | § 2, plus `app/static/review.html` (the evidence overlay, the clause that fired, Approve / Reject / resolve-duplicate) and the per-capture instruction with a hint box; the README's hero image |
 | Documentation and presentation | 10% | this report, [`README.md`](../README.md), both diagrams, [`deploy.md`](./deploy.md) — and the demo video, <https://youtu.be/zOfV23uB8Ts>, scripted in [`video-script.md`](./video-script.md) |
-| Cloud delivery, reproducibility, responsible operation | 10% | § 5 — deployment is built, tested, and **blocked at submission time** by the only available account's Free Plan guardrail (not deployed; see § 5 for the attempt log), rollback documented regardless; the hash-pinned locks; § 8 |
+| Cloud delivery, reproducibility, responsible operation | 10% | § 5 — the Lambda path is built, tested and **blocked** by the only available account's Free Plan guardrail (attempt log in [`deploy.md`](./deploy.md)); the EC2 console deploy is prepared for the owner to launch; rollback documented regardless; the hash-pinned locks; § 8 |
 
 For the five Agentic Vision Award rubric lines:
 
 | Rubric line | Weight | Where |
 |---|---|---|
-| Substantive OpenCV 5 and agent integration | 30% | § 4, and [`agent-workflow.md`](./agent-workflow.md) — measurements are the decision inputs, not a display layer |
-| Orchestration and appropriate autonomy | 25% | § 3, the 11-rule cascade in § 6's set-up, and `persistent_defect` stopping the loop after two retakes |
-| Task effectiveness and evaluation | 20% | § 6 — 15/15 task success, 0/15 silent accepts, 5/6 retake convergence |
+| Substantive OpenCV 5 and agent integration | 30% | § 4, and [`agent-workflow.md`](./agent-workflow.md) — measurements are the decision inputs, and the overlay draws them back onto the image; `app/mcp_server.py` offers the agent tools over MCP |
+| Orchestration and appropriate autonomy | 25% | § 3 (the actor guard and the state guard), the 11-rule cascade, and `persistent_defect` stopping the loop after two retakes |
+| Task effectiveness and evaluation | 20% | § 6 — 15/15 task success isolated and 9/15 in one shared batch, 0/15 silent accepts in both, 5/6 retake convergence |
 | Failure handling, observability, security, human control | 15% | § 7 (four named failure cases), the trace (`GET /trace/:id`, `caused_by` chain), § 8 |
 | User experience, documentation, and demonstration | 10% | § 2 and this report; the **demonstration** evidence is `tools/run_demo.py`'s printed trace, backed by the submission video, <https://youtu.be/zOfV23uB8Ts> |

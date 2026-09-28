@@ -16,9 +16,9 @@ This regenerates this exact file from `docs/evaluation.md`'s default output path
 ## Sets
 
 - **S — synthetic.** `data/synthetic/manifest.json`, generated from a fixed seed with exact ground truth. 15 of 17 samples carry a `expected_verdict`; the other 2 (`blur_1`, `blur_2`) exist only for `test_metrics.py`'s monotonic-focus assertion and carry no verdict ground truth.
-- **R — real photographs.** Not evaluated here. Vendoring a real set — a CORD subset (CC BY 4.0) or owner-shot photos — is a separate owner decision that has not been taken; `data/real/` does not exist yet. This is Limitation 1 below, not glossed over.
+- **R — real photographs.** Not evaluated here: no real set has been collected yet, and `data/real/` does not exist. The collection protocol (how many photos, which conditions, consent and masking, the label format) is written down in `docs/real-photo-set.md`; once `data/real/manifest.json` exists, this harness scores it automatically in a section of its own. This is Limitation 1 below, not glossed over.
 
-## Headline metrics (set S, isolated per-sample methodology)
+## Headline metrics (set S: isolated per sample, and one shared batch)
 
 "Isolated" means one fresh batch per sample — the same methodology `tests/test_samples.py`'s golden-verdict test already uses, and the methodology the manifest's own `expected_verdict` values were written against. `dup_a` is seeded with `clean_a`'s hash first, exactly as its note ("escalates when clean_a's hash is in the batch") requires.
 
@@ -31,7 +31,11 @@ This regenerates this exact file from `docs/evaluation.md`'s default output path
 | Escalate rate | 4/17 (23.5%) | share of all 17 isolated samples reaching this outcome |
 | Escalation precision | **4/4 (100.0%)** | of escalated captures, the fraction the simulated reviewer did NOT immediately approve — see the caveat below |
 | Retake convergence | **5/6 (83.3%)** | fraction of the dedicated sequence set (below) reaching `accept` within two retakes |
-| Approval latency (simulated) | p50 55.1 ms, max 55.1 ms | `reviewer entry.at - escalate entry.at`, read from the trace itself — see the caveat below |
+| Task-success rate, **shared batch** | **9/15 (60.0%)** | the same samples through ONE batch in manifest order; lower because receipts sharing a template collide as suspected duplicates (Failure Case 1) |
+| Silent-accept rate, **shared batch** | **0/15 (0.0%)** | every collision escalates to a person; none is accepted |
+| Approval latency (simulated) | p50 54.3 ms, max 60.0 ms | `reviewer entry.at - escalate entry.at`, read from the trace itself — see the caveat below |
+
+Both methodologies are reported because they answer different questions. The isolated pass is how the manifest's ground truth was written (one receipt, one batch). The shared batch shows what happens when captures sharing one printed layout land in the same batch; most samples here are one layout re-rendered with a different defect, so it is a stress case, and how often real receipts collide is not measured: 6 of 15 samples escalate as suspected duplicates of an already-accepted receipt with the same printed layout. For example `glare_text` posted after `clean_a` in one batch escalates as `suspected_duplicate` instead of asking for a retake. It costs a person's attention, never a silent accept.
 
 Silent-accept rate is **0/15** on set S: no accepted capture (auto or reviewed) disagrees with the manifest's ground truth.
 
@@ -92,10 +96,10 @@ Every isolated capture that escalated received one reviewer action, chosen from 
 
 | Sample | Reason escalated | Reviewer action | Note | Final state | Latency (ms) |
 |---|---|---|---|---|---|
-| `not_doc` | `not_a_document` | `reject` | not a receipt | rejected | 55.1 |
-| `faded` | `not_a_document` | `reject` | too faded to trust; ask for a retake in better light | rejected | 55.1 |
-| `two_docs` | `two_documents` | `reject` | two receipts in frame; no verb yet to split them (see Failure Case 3) | rejected | 51.9 |
-| `dup_a` | `suspected_duplicate` | `resolve_duplicate` | same receipt, re-shot (manifest ground truth) | rejected | 55.1 |
+| `not_doc` | `not_a_document` | `reject` | not a receipt | rejected | 60.0 |
+| `faded` | `not_a_document` | `reject` | too faded to trust; ask for a retake in better light | rejected | 53.4 |
+| `two_docs` | `two_documents` | `reject` | two receipts in frame; no verb yet to split them (see Failure Case 3) | rejected | 54.3 |
+| `dup_a` | `suspected_duplicate` | `resolve_duplicate` | same receipt, re-shot (manifest ground truth) | rejected | 50.8 |
 
 ## Retake-convergence sequence set
 
@@ -139,7 +143,7 @@ Each is labelled **Handled** or **Limitation**, and every number below came from
 
 ### 1. Limitation — batch-level duplicate collision across a shared template
 
-Running the entire manifest through ONE shared batch (the plain reading of "run the dataset through the loop", `run_batch_collision` in `eval/run_eval.py`) produces 6 captures that escalate as `suspected_duplicate` even though the manifest's own ground truth expects a different verdict:
+Running the entire manifest through ONE shared batch (the plain reading of "run the dataset through the loop", `run_shared_batch` in `eval/run_eval.py`) produces 6 captures that escalate as `suspected_duplicate` even though the manifest's own ground truth expects a different verdict:
 
 | Sample | Base | `nearest_distance` | `duplicate_of` | Manifest expected |
 |---|---|---|---|---|
@@ -166,7 +170,7 @@ Not a failure, included because it is the one case in this set where the correct
 
 ## Limitations
 
-- **No real-photograph set (R).** Vendoring `data/real/` is an owner decision not yet taken; every number in this report is set S (synthetic) only. Verdict-agreement against hand labels, and a real escalation-precision case where a reviewer actually *disagrees* with an escalation, both need R and are not measured here.
+- **No real-photograph set (R).** No real set has been collected yet (protocol: `docs/real-photo-set.md`); every number in this report is set S (synthetic) only. Verdict agreement against hand labels, and a real escalation-precision case where a reviewer actually *disagrees* with an escalation, both need R and are not measured here.
 - **Approval latency is simulated,** not measured against a real reviewer — see the caveat under Simulated human review above.
 - **Latency and cost against the deployed Lambda are not measured here, and cannot be for this submission.** The original design called for p50/p95 cold and warm latency and a Cost Explorer dollar figure from the deployed arm64 function; this harness runs the in-memory `AgentLoop` precursor locally. `deploy/handler.py` and the container image are built and tested, but the only AWS account available for this submission denies `ecr:CreateRepository` and `lambda:CreateFunction` outright via an Organization Service Control Policy (see `docs/deploy.md`) — not a pending owner action, a blocked one.
 - **The retake-convergence set is scripted, not sampled.** Six sequences chosen to exercise every retake-triggering rule at least once plus the persistent-defect stop; it is not a random sample of real retake behaviour, because no real capture stream exists yet.

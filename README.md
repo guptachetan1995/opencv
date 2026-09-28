@@ -1,5 +1,11 @@
 # Second Look
 
+![Three receipt photos as Second Look's evidence overlay draws them: glare over the total gets a retake with a hint box; the retake fixes the glare but clips the bottom edge, so a different rule asks for another retake; a photo with no document is escalated to a person.](./docs/hero.jpg)
+
+*Drawn by [`tools/make_hero.py`](./tools/make_hero.py) from a real run of the agent loop:
+each panel is the page OpenCV 5 measured, with the regions it found and the call the
+measurement chose next.*
+
 A bad receipt photo is cheap to fix for about two seconds — glare across the total, the
 bottom third out of focus, the tax line cropped off the frame — while the person who took it
 is still standing there. Three weeks later, when a bookkeeper finally opens the capture, it
@@ -16,44 +22,89 @@ frame-edge crop, QR/barcode, and a perceptual hash for duplicates — and a dete
 policy turns those measurements into one of three verdicts: **accept**, **retake**, or
 **escalate**.
 
-What makes it agentic rather than a filter is that the measurements choose the *next* action.
-A shot with glare across the total is asked to be re-taken with the light moved; the re-take
-that removes the glare but clips the bottom edge gets a *different* instruction, from a
-different rule, fired by a different metric. The visual evidence changes what the system does
-next, and the stored trace shows exactly which measurement caused which call.
+It is **active perception for autonomous inspection**, the competition's first suggested
+project area, with one twist: the system cannot move the camera, so it directs the person
+holding it. A shot with glare across the total is asked to be re-taken with the light moved;
+the re-take that removes the glare but clips the bottom edge gets a *different* instruction,
+from a different rule, fired by a different metric, and a hint box on the region to fix. Each
+retake is measured again and compared against the defect it was asked to fix. The visual
+evidence changes what the system does next, and the stored trace shows exactly which
+measurement caused which call.
 
 The two ways this can be wrong don't cost the same: nagging someone for a retake they didn't
 need costs a few seconds of irritation, but silently accepting an unreadable capture costs the
 whole claim. So the agent auto-accepts only when every metric is comfortably inside its band
 and the capture is not a suspected duplicate. The uncertain band, a defect that survived two
 retakes, a suspected duplicate, and anything that does not look like a document all go to a
-person — who is also the only party that can discard a capture or overturn a verdict. Nothing
-is ever sent anywhere: no email, no accounting integration, no payment.
+person — the only party who can approve, reject or resolve them. Nothing is ever sent
+anywhere: no email, no accounting integration, no payment.
 
 **Submitted** on 2026-09-17 —
 [devpost.com/software/second-look-0l5bas](https://devpost.com/software/second-look-0l5bas).
 **Demo video:** <https://youtu.be/zOfV23uB8Ts>
 
-This README covers [how it works](#how-it-works) (the measurements, the decision cascade, the
-agent tools and human verbs, the trace), [the demo](#the-demo), the
-[evaluation headline](#evaluation), [setup and commands](#setup-run-test-lint),
-[deployment](#deployment), and [what is not built](#what-is-not-built). The technical report,
-both diagrams and the generated evaluation are in [`docs/`](#documentation).
+**Try it:** `make setup`, then `.venv/bin/python tools/run_demo.py` (the whole loop, printed
+as its trace) or `make run` and open <http://127.0.0.1:8080/> (the review page).
+**A live screen-share of the running server — `make run`, `tools/run_demo.py` and the review
+page — is available to judges on request via a Devpost message.** There is no public endpoint
+yet: the AWS account's Free Plan policy blocks the Lambda path, and the EC2 deploy is
+prepared but not launched ([Deployment](#deployment)).
 
-**Status:** code-complete and tested locally; the live AWS endpoint is blocked, not pending.
+This README covers [what already exists](#what-already-exists-and-what-this-adds),
+[how it works](#how-it-works) (the measurements, the decision cascade, the agent tools and
+human verbs, the trace), [the demo](#the-demo), the [evaluation headline](#evaluation),
+[setup and commands](#setup-run-test-lint), the [HTTP API](#http-api), the
+[MCP server](#mcp-server-appmcp_serverpy), [deployment](#deployment), and
+[what is not built](#what-is-not-built). The technical report, both diagrams and the
+generated evaluation are in [`docs/`](#documentation).
+
+**Status:** code-complete and tested locally; the Lambda deploy is blocked by the account,
+and an EC2 console deploy is prepared for the owner to launch.
 
 | Layer | State |
 |---|---|
 | `inspect()` (eight OpenCV 5 measurements) + `decide()` (rule cascade) | Built, tested against a synthetic set with exact ground truth |
-| `agent_loop.py` — the agent tools and human verbs behind one `invoke(tool, args, actor)` chokepoint | Built: `process_capture` lets the OpenCV verdict pick the next tool call, a human-approval wait resumes only on a real `invoke()` call, and the trace links every call to the entry that caused it (`python tools/run_demo.py` runs it end to end) |
-| `app/server.py` — local HTTP serving (`make run`) | Built: the approval page's Approve button calls the exact same `invoke("approve", ...)` the tools call; `app/smoke.py` (`make smoke`) exercises it end to end |
-| `deploy/handler.py`, the container image, [`docs/deploy.md`](./docs/deploy.md) | Built |
+| `agent_loop.py` — the agent tools and human verbs behind one `invoke(tool, args, actor)` chokepoint | Built: the actor guard refuses an agent reaching for a human verb, and each agent tool refuses a capture that has left the agent's part of the lifecycle, so no agent call can move an escalated capture |
+| `overlay.py` — the evidence overlay | Built: the photo and the rectified page with every region the measurements found and the hint box, drawn per request and never stored |
+| `service.py` + `app/server.py` — the HTTP routes (`make run`) | Built: inspect, retake, trace, overlay, and the three human verbs, which need the reviewer token; `app/smoke.py` (`make smoke`) exercises it end to end |
+| `app/static/review.html` — the review page | Built: the overlay, the clause that fired, the key measurements, and Approve / Reject / "Is a duplicate" / "Not a duplicate" |
+| `app/mcp_server.py` — a stdio MCP server over the agent tools | Built: the agent tools and reads only; the human verbs are not offered |
+| `deploy/handler.py` (Lambda), the container images, [`docs/deploy.md`](./docs/deploy.md) | Lambda adapter and image: built (the image locally for `linux/arm64`, 2026-09-17). EC2 image: written, never built yet — its first build is the instance's first boot |
 | [`docs/evaluation.md`](./docs/evaluation.md) | Built |
-| Live AWS deploy | **Blocked, not pending** — the only available AWS account's own Service Control Policy denies both `ecr:CreateRepository` and `lambda:CreateFunction`; see [Deployment](#deployment) |
-| `apply.py`/`store.py` (persistence), `overlay.py` (evidence image), three of the six human verbs | Not built — see [What is not built](#what-is-not-built) |
+| Live AWS endpoint | **Lambda: blocked** — the only available AWS account's Service Control Policy denies `ecr:CreateRepository` and `lambda:CreateFunction`. **EC2: prepared, not launched** — see [Deployment](#deployment) |
+| `apply.py`/`store.py` (persistence), three of the six human verbs, the browser agent lane | Not built — see [What is not built](#what-is-not-built) |
 
-Both serving paths (`app/server.py` and `deploy/handler.py`) are in-memory, matching
-`agent_loop.py`'s own scope; there is no persisted store.
+The serving paths are in-memory, matching `agent_loop.py`'s own scope; there is no
+persisted store.
+
+## What already exists, and what this adds
+
+Capture-time quality checks are not new. Scanbot's
+[Document Quality Analyzer](https://docs.scanbot.io/android/document-scanner-sdk/document-quality-analyzer/introduction/)
+scores a scan by how readable its text is and returns the score with a histogram and
+heatmap of text scores for the integrating app to act on. Veryfi Lens
+([settings](https://docs.veryfi.com/lens/mobile/settings/)) flags a capture with 20% or more
+blur and alerts the user that it may need recapturing, has optional glare detection, and
+detects and crops the document during capture. Expensify's SmartScan
+([troubleshooting](https://help.expensify.com/articles/expensify-classic/expenses/Troubleshoot-SmartScan-Issues))
+reports a failed scan after it runs and lets the user tap Retake. Second Look takes that
+pattern as its starting point. What it adds, none of which we found in the documentation
+pages linked above:
+
+- **A different, located instruction per failing metric.** Each retake names the one metric
+  that failed and a hint box on the rectified page where it failed, from a committed rule
+  table whose every evaluated clause is recorded in the verdict.
+- **Glare judged by where it falls.** `glare_over_text_frac` is the share of the glare that
+  lies on the text lines: glare on blank paper is accepted, glare across the total is not.
+- **Retake memory.** `compare_captures` measures whether the defect the retake was asked to
+  fix is actually `fixed`, and `persistent_defect` stops asking after two retakes and hands
+  the capture to a person.
+- **A duplicate check only a person can resolve.** The agent can escalate a suspected
+  duplicate but can never accept or reject one; even the reviewer's approve is refused
+  until they say whether it is a duplicate.
+- **A `caused_by` trace behind an actor- and state-guarded chokepoint**, so which
+  measurement caused which call — and which person made which decision — is a stored,
+  checkable record.
 
 ## How it works
 
@@ -66,13 +117,13 @@ built): [`docs/architecture.svg`](./docs/architecture.svg), walked through in
 The path of one capture:
 
 ```
-client (browser or curl)
-  → app/server.py (local, make run)  |  deploy/handler.py (AWS Lambda Function URL)
-      → agent_loop.process_capture
+client (browser, curl, or an MCP client)
+  → app/server.py (make run, or EC2) | deploy/handler.py (Lambda) | app/mcp_server.py (stdio)
+      → secondlook.service routes (HTTP adapters) → agent_loop.process_capture
           → invoke("inspect_capture", …, actor="agent")  → perception.inspect()  [OpenCV 5]
           → invoke("decide_capture",  …, actor="agent")  → policy.decide()       [11-rule cascade]
               → accept   → the capture joins the batch's accepted set
-              → retake   → invoke("request_recapture", {failing_metric, hint_box}, actor="agent")
+              → retake   → invoke("request_recapture", …, actor="agent") → a retake slot
               → escalate → invoke("escalate", {reason}, actor="agent") → the human review queue
 ```
 
@@ -98,15 +149,22 @@ than as one score for the photograph.
 The record also carries `image_shape`, `page_shape`, `opencv_version`, `dnn_engine`,
 `text_detector` and per-measurement `elapsed_ms` — 31 fields in all. Every field is a number,
 a bool, a short string, or a list of boxes or points: **no pixel data and no decoded text is
-ever stored** (a QR payload is dropped inside the metric that read it), and
+ever stored in a record** (a QR payload is dropped inside the metric that read it), and
 `tests/test_schema.py` asserts it.
 
-Three measurements do more than score the image. `glare_over_text_frac` — glare intersected
-with the text mask, not glare area — is what separates "glare on white space, accept" from
-"glare across the total, retake". A decoded QR (`code_decoded`) cancels the `out_of_focus`
-retake a soft page would otherwise get: a measurement calling an action *off*.
+Three measurements do more than score the image. `glare_over_text_frac` — the share of the
+glare that lies on the text lines, not glare area — is what separates "glare on white space,
+accept" from "glare across the total, retake". A decoded QR (`code_decoded`) cancels the
+`out_of_focus` retake a soft page would otherwise get: a measurement calling an action *off*.
 `second_quad_area_fraction` exists so that two receipts in one frame escalate instead of the
 largest-quad heuristic silently scoring one of them.
+
+**The evidence overlay** (`src/secondlook/overlay.py`) draws those measurements back onto the
+image with OpenCV: the frame as posted with the located quad, and the page re-warped from the
+stored quad onto exactly `page_shape`, with the text boxes, blur tiles, glare boxes and the
+verdict's hint box, under a header quoting the clause that fired (`glare_over_text_frac 0.92
+> 0.15`). It is rendered on request — `GET /overlay/<capture_id>` for the reviewer, the hero
+image above, the replay site — and never written to a record.
 
 ### What OpenCV 5 changed, and what it costs this entry
 
@@ -158,6 +216,16 @@ edge with a blank bottom band is a complete receipt, while text at the cut means
 outside the frame. Rule 10 exists so that "close to the line" is a person's call rather than a
 hair's-width verdict.
 
+**Why the decision layer is deterministic, not an LLM.** The same photo always gets the same
+verdict, and every verdict carries the clause that produced it, so a threshold can be tested,
+audited and argued with, and every verdict in the evaluation below comes out the same on every
+run. Nothing leaves the
+machine to decide a capture, so there is no per-photo model cost and no receipt image sent to
+a third party. The judgment calls that do need intelligence — is this the same receipt, is
+this blur acceptable, is this even a receipt — are exactly the ones routed to a person rather
+than to a model. An LLM agent can still drive the loop, through the [MCP
+server](#mcp-server-appmcp_serverpy), and the same guards bind it.
+
 ### Agent tools and human verbs
 
 Every tool and every verb is a call into one function, `agent_loop.invoke(tool, args, actor)`,
@@ -170,8 +238,14 @@ if tool in AGENT_TOOLS and actor != "agent":
     raise PermissionError(f"{tool!r} is an agent tool; actor was {actor!r}")
 ```
 
-The agent has no private path to the accepted state, and the human-only verbs are never
-registered as agent tools — `tests/test_agent_loop.py` asserts the two sets are disjoint.
+The second guard is the capture's state. Each agent tool acts only on a capture that is still
+`received` or `measured` (`AGENT_STATES`) and raises `StateError` for anything else — a capture
+awaiting a retake photo, escalated to a person, accepted or rejected. Without it an agent could
+re-decide an escalated capture back to `measured` and request a retake of it, walking it out of
+the review queue with no person involved; `tests/test_agent_loop.py`
+(`test_agent_tools_cannot_move_an_escalated_capture`) reproduces exactly that sequence and
+asserts every agent tool is refused and the capture stays `escalated`. The human-only verbs are
+never registered as agent tools, and the tests assert the two sets are disjoint.
 
 **Agent tools** (`AGENT_TOOLS`; `actor="agent"` only):
 
@@ -184,36 +258,48 @@ registered as agent tools — `tests/test_agent_loop.py` asserts the two sets ar
   records the verdict plus every clause it evaluated. It does **not** re-run OpenCV: it raises
   if no measurement record exists. An `accept` verdict *is* the auto-accept — the capture moves
   to `accepted` and its hash joins the batch — and the cascade cannot produce `accept` for a
-  suspected duplicate, because rule 3 sits above rule 11.
-- **`request_recapture(capture_id, failing_metric, hint_box)`** — records a retake request
-  naming the one metric that failed and the box on the page where it failed, opens a successor
-  capture slot (`parent_id` set, `attempt` + 1), and moves the capture to `awaiting_retake`. It
-  does **not** notify anyone — there is no email, SMS or push — and does **not** delete or
-  alter the previous capture, which stays in the trace as evidence.
+  suspected duplicate, because rule 3 sits above rule 11. It does **not** re-decide a capture
+  that is escalated, awaiting a retake, or decided.
+- **`request_recapture(capture_id)`** — for a capture whose own verdict is `retake`: records
+  the metric that failed and the box on the page where it failed (both taken from the
+  verdict; a caller may restate them, not replace them), opens a successor capture slot
+  (`parent_id` set, `attempt` + 1), and moves the capture to `awaiting_retake`. It does
+  **not** notify anyone — there is no email, SMS or push — and does **not** delete or alter
+  the previous capture, which stays in the trace as evidence.
 - **`compare_captures(previous_id, new_id)`** — measures the retake image and reports, for the
   one metric that failed on the previous capture, whether that defect is `fixed`, `unchanged`
   or `worse`. It does **not** decide a verdict or store measurements on the new capture
   (`inspect_capture` runs next), and does **not** vouch for the rest of the image: a fixed glare
   with a new crop reports `fixed`, and the crop is caught by the next `decide_capture`.
-- **`escalate(capture_id, reason)`** — moves the capture into the human review queue with a
-  machine-readable reason (`not_a_document`, `two_documents`, `suspected_duplicate`,
-  `persistent_defect` or `uncertain_band`). It does **not** approve or reject anything. An
-  escalated capture is waiting for a person: `process_capture` is a no-op once
-  `state == "escalated"`, so nothing advances it until a reviewer's `invoke()` call does.
+- **`escalate(capture_id, reason)`** — for a capture whose own verdict is `escalate`: moves it
+  into the human review queue under the verdict's machine-readable reason (`not_a_document`,
+  `two_documents`, `suspected_duplicate`, `persistent_defect` or `uncertain_band`). The reason
+  is optional and, like `request_recapture`'s metric, may be restated but not replaced, so a
+  suspected duplicate cannot be relabelled to skip the reviewer's duplicate question
+  (`test_escalate_keeps_the_verdicts_reason_so_a_duplicate_cannot_be_relabelled`). It does
+  **not** approve or reject anything. After it, `process_capture` is a no-op and every agent
+  tool refuses the capture, so nothing advances it until a reviewer's `invoke()` call does.
 
 **Read tools** — `get_capture(capture_id)` and `get_trace(capture_id)` — are open to either
-actor, change nothing, and write no trace entry.
+actor, change nothing, and write no trace entry. `get_capture` returns a fresh dict built from
+the record, never the live object, so editing what it returns edits nothing.
 
-**Human-only verbs** (`HUMAN_VERBS`; `actor="reviewer"` only):
+`open_capture()` and `attach_image()` are plumbing, not gated tools: a photo landing in a new
+slot, or in the retake slot `request_recapture` opened. `attach_image` refuses any capture that
+is not an open, unmeasured retake slot, so a photo can never be swapped under a measured one.
+
+**Human-only verbs** (`HUMAN_VERBS`; `actor="reviewer"` only; over HTTP each needs the
+reviewer token):
 
 - **`approve(capture_id, note)`** — accepts an escalated capture. It refuses a
   `suspected_duplicate` until `resolve_duplicate` has cleared it, so a possible duplicate cannot
-  be waved through in one click. Over HTTP this is `POST /approve/<capture_id>`, the review
-  page's Approve button.
-- **`reject(capture_id, note)`** — refuses an escalated capture.
+  be waved through in one click. `POST /approve/<capture_id>`, the review page's Approve button.
+- **`reject(capture_id, note)`** — refuses an escalated capture. `POST /reject/<capture_id>`,
+  the Reject button.
 - **`resolve_duplicate(capture_id, is_duplicate, note)`** — the arbiter for measurement 8:
   `is_duplicate=True` rejects the capture; `False` clears it and leaves it waiting for
-  `approve`. It has no HTTP route yet; the demo and the evaluation call it through `invoke()`.
+  `approve`. `POST /resolve_duplicate/<capture_id>`, the "Is a duplicate" and "Not a duplicate"
+  buttons.
 
 `override` (overturn a verdict), `discard` (irreversibly delete a capture) and `close_batch`
 are designed as human-only verbs too, and are not built.
@@ -264,12 +350,12 @@ second look demo: all beats reached their expected verdict.
 ```
 
 Read the `caused_by` column of the first trace. Entry 3's retake request was chosen by entry
-2's decision, which was chosen by entry 1's measurement (`glare_over_text_frac` 0.9211, over
-the 0.15 threshold). The retake, `crop_bottom.jpg`, is the same receipt with the light moved:
-entry 4 reports the glare `fixed` (0.9211 to 0.0). But its bottom edge is off the frame with
-text at the cut, so entry 6 fires a **different rule on a different metric**,
-`bottom_edge_clipped`. Nothing scheduled that second instruction; the second image's own
-measurements chose it. That is the Agentic Vision qualifying beat.
+2's decision, which was chosen by entry 1's measurement (`glare_over_text_frac` 0.9211 — 92% of
+the glare lies on the text lines — over the 0.15 threshold). The retake, `crop_bottom.jpg`, is
+the same receipt with the light moved: entry 4 reports the glare `fixed` (0.9211 to 0.0). But
+its bottom edge is off the frame with text at the cut, so entry 6 fires a **different rule on a
+different metric**, `bottom_edge_clipped`. Nothing scheduled that second instruction; the
+second image's own measurements chose it. That is the Agentic Vision qualifying beat.
 
 In the second trace, `dup_a.jpg` lands at Hamming distance 3 from the already-accepted
 `clean_a.jpg`, so the agent escalates it and cannot accept it; only the two `reviewer` entries
@@ -278,7 +364,29 @@ move it to `accepted`. The demo's reviewer clears the duplicate to show the appr
 fixture as a real duplicate and rejects it. The script asserts its own beats, and
 `tests/test_agent_loop.py` runs it and checks each beat's verdict appears in the output.
 
-The same loop runs over HTTP with `make run`; see [HTTP API](#http-api-appserverpy).
+**The same loop over HTTP.** `POST /inspect` returns the retake slot (`successor_id`) a retake
+verdict opened, and `POST /retake/<successor_id>` posts the retake photo into it. Real output
+against `make run` (each capture response piped through a one-line selector printing
+`capture_id state rule_id successor`; the `401` refusal is shown as returned):
+
+```
+$ curl -s -X POST --data-binary @data/synthetic/glare_text.jpg $BASE/inspect
+c_001 awaiting_retake glare_over_total successor: c_002
+$ curl -s -X POST --data-binary @data/synthetic/crop_bottom.jpg $BASE/retake/c_002
+c_002 awaiting_retake bottom_edge_clipped successor: c_003
+$ curl -s -X POST --data-binary @data/synthetic/clean_a.jpg $BASE/retake/c_003
+c_003 accepted accept successor: None
+$ curl -s -X POST --data-binary @data/synthetic/not_doc.jpg $BASE/inspect
+c_004 escalated not_a_document successor: None
+$ curl -s -X POST -d '{"note": "not a receipt"}' $BASE/reject/c_004
+{"error": "reviewer token required"}
+$ curl -s -X POST -H "Authorization: Bearer $REVIEWER_TOKEN" -d '{"note": "not a receipt"}' $BASE/reject/c_004
+c_004 rejected not_a_document successor: None
+```
+
+`GET /trace/c_003` then returns all ten entries of the chain, from the first glare
+measurement to the accept, with `compare_captures` reporting the glare and then the crop
+`fixed`.
 
 ## Evaluation
 
@@ -288,32 +396,41 @@ The same loop runs over HTTP with `make run`; see [HTTP API](#http-api-appserver
 numbers: task success **15/15**, silent-accept rate **0/15** — the number this entry is built
 around, since a silently accepted bad capture is the one error that costs the claim — and
 retake convergence **5/6**, where the sixth sequence (`blur_4` three times) correctly stops at
-`persistent_defect`. The report also names four failure cases and five limitations of the
-evaluation itself, starting with the fact that there is no real-photograph set yet. The
-technical report ([`docs/report.md`](./docs/report.md) § 7) adds one capability limit no number
-covers: a photograph of a screen showing a receipt (moiré) is not detected.
+`persistent_defect`.
+
+Those are the isolated numbers, one receipt per batch, which is how the ground truth was
+written. **Through one shared batch, task success is 9/15**: receipts that share a printed
+layout collide as suspected duplicates of one already accepted — `glare_text.jpg` posted after
+`clean_a.jpg` in the same batch escalates as `suspected_duplicate` instead of asking for a
+retake. The silent-accept rate stays **0/15** in the shared batch too: every collision goes to a
+person. The report names four failure cases and five limitations of the evaluation itself,
+starting with the fact that there is no real-photograph set yet (the collection protocol is
+[`docs/real-photo-set.md`](./docs/real-photo-set.md), and the harness scores set R the moment
+`data/real/manifest.json` exists). The technical report
+([`docs/report.md`](./docs/report.md) § 7) adds one capability limit no number covers: a
+photograph of a screen showing a receipt (moiré) is not detected.
 
 ## Stack
 
-- Python 3.13 on `public.ecr.aws/lambda/python:3.13` (arm64 / Graviton2)
+- Python 3.13; the Lambda image is `public.ecr.aws/lambda/python:3.13` (arm64 / Graviton2), the
+  EC2 image is `python:3.13-slim` (`deploy/ec2/Dockerfile`)
 - `opencv-python-headless==5.0.0.93` — OpenCV 5.0.0; the pin is exact because
   `opencv-python` 4.14.x also exists and a loose constraint resolves backwards into the 4.x
   line, where the warping numerics differ
 - `numpy==2.5.3`
-- `pytest==9.1.1`, `ruff==0.16.6`, `Pillow==12.3.0` (dev only; Pillow is not in the Lambda
-  image)
+- `pytest==9.1.1`, `ruff==0.16.6`, `Pillow==12.3.0` (dev only; Pillow is not in either image)
 - One static HTML page, vanilla JavaScript — no framework, no bundler
-- AWS Lambda container image behind a Lambda Function URL. The S3 store and the structured
-  CloudWatch trace logs are designed but not built. **Not AWS App Runner**, which
-  [closed to new customers on 30 April 2026](https://aws.amazon.com/apprunner/) — see
-  [Deployment](#deployment) for why ECS Express Mode was also considered and rejected.
+- MCP over stdio, written against the standard library — no SDK dependency
+- AWS: a Lambda container image behind a Lambda Function URL (built, blocked by the account),
+  or one EC2 instance running the same routes (prepared, owner-launched). The S3 store and the
+  structured CloudWatch trace logs are designed but not built. **Not AWS App Runner**, which
+  [closed to new customers on 30 April 2026](https://aws.amazon.com/apprunner/).
 
-The Lambda runtime dependency set is exactly two packages: `opencv-python-headless` and
-`numpy` (`requirements.txt`, hashed in `requirements.lock`). The development set adds the
-test runner, linter and sample renderer (`requirements-dev.txt`, hashed in
-`requirements-dev.lock`). Both locks are generated by `pip-compile --generate-hashes` and
-installed with `--require-hashes`. `opencv-contrib-python-headless` is deliberately not a
-dependency.
+The runtime dependency set is exactly two packages: `opencv-python-headless` and `numpy`
+(`requirements.txt`, hashed in `requirements.lock`). The development set adds the test runner,
+linter and sample renderer (`requirements-dev.txt`, hashed in `requirements-dev.lock`). Both
+locks are generated by `pip-compile --generate-hashes` and installed with `--require-hashes`.
+`opencv-contrib-python-headless` is deliberately not a dependency.
 
 ## Setup, run, test, lint
 
@@ -323,24 +440,28 @@ Needs `python3.13` on the `PATH` (pyenv reads `.python-version`; otherwise pass
 ```sh
 git clone https://github.com/guptachetan1995/opencv && cd opencv
 make setup     # python3.13 -m venv .venv && pip install --require-hashes -r requirements-dev.lock
-make test      # pytest — metrics, policy, schema, samples, OpenCV version, agent loop, HTTP
+make test      # pytest — metrics, policy, schema, samples, OpenCV version, agent loop, HTTP, MCP
 make lint      # ruff check . && ruff format --check .
 make samples   # regenerate data/synthetic/ from the fixed seed
 bash verify.sh # the single gate: README and licence checks + lint + tests
 ```
 
 ```sh
-make run      # python3 app/server.py — binds 127.0.0.1:8080 (PORT env var overrides)
+make run      # python3 app/server.py — binds 127.0.0.1:8080 (HOST and PORT override)
 make smoke    # python3 app/smoke.py — starts its own copy, hits /health + one /inspect
 ```
 
-```sh
-.venv/bin/python tools/run_demo.py  # the demo above, end to end
-.venv/bin/python -m eval.run_eval   # regenerates docs/evaluation.md from the committed set
-```
+`make run` prints a reviewer token for the run (or set `REVIEWER_TOKEN` to choose one, which is
+then never echoed); paste it into the review page's token field to see the photos and act on
+the queue.
 
-There is no `make` target for either; the report the second one writes is
-[`docs/evaluation.md`](./docs/evaluation.md).
+```sh
+.venv/bin/python tools/run_demo.py        # the demo above, end to end
+.venv/bin/python -m eval.run_eval         # regenerates docs/evaluation.md from the committed set
+.venv/bin/python tools/make_hero.py       # redraws docs/hero.jpg from a real run
+./build-pages.sh /tmp/second-look-site    # the static replay site of a recorded run
+.venv/bin/python app/mcp_server.py        # the stdio MCP server (an MCP client starts it)
+```
 
 Using the pipeline from Python:
 
@@ -375,29 +496,65 @@ print(retake.state, retake.verdict.rule_id)  # a DIFFERENT rule: bottom_edge_cli
 invoke("approve", {"capture_id": "..."}, "reviewer", loop=loop)
 ```
 
-## HTTP API (`app/server.py`)
+## HTTP API
 
-`make run` (or `python3 app/server.py`) serves the same `AgentLoop` over HTTP with the
-standard library's `http.server` — no framework, since the runtime dependency set is exactly
-OpenCV and numpy. One process, one in-memory loop; state does not survive a restart (there is
-no persisted store).
+The routes live once, in `src/secondlook/service.py`, and two adapters serve them:
+`app/server.py` (the standard library's `http.server`: `make run` locally, and the EC2 image)
+and `deploy/handler.py` (a Lambda Function URL). No framework, since the runtime dependency set
+is exactly OpenCV and numpy. One process, one in-memory loop; state does not survive a restart.
 
 | Route | What |
 |---|---|
 | `GET /health` | `{"status": "ok"}` |
-| `POST /inspect` | body: raw image bytes. Runs `process_capture` (inspect -> decide -> the next call the verdict picks) and returns the capture's `state`, `measurements` and `verdict`. A body over 4 MB is rejected with `413 {"error": "payload_too_large"}` rather than a truncated decode. |
-| `GET /trace/<capture_id>` | the capture's full ordered trace (a list of `TraceEntry` rows — see [The trace](#the-trace)) |
+| `POST /inspect` | body: raw image bytes. Runs `process_capture` (inspect -> decide -> the next call the verdict picks) and returns the capture: `state`, `measurements`, `verdict`, and `successor_id` when a retake was requested. A body over 4 MB is rejected with `413 {"error": "payload_too_large"}`. |
+| `POST /retake/<successor_id>` | body: raw image bytes for the retake slot a retake verdict opened; runs the same loop, starting with `compare_captures` against the previous capture. `409` for anything that is not an open retake slot. |
+| `GET /capture/<capture_id>` | one capture (the `get_capture` read tool) |
+| `GET /trace/<capture_id>` | the capture's full ordered trace across its retake chain (see [The trace](#the-trace)) |
 | `GET /pending` | captures currently `state == "escalated"`, waiting for a reviewer |
-| `POST /approve/<capture_id>` | body: optional JSON `{"note": str}`. Calls `invoke("approve", ..., actor="reviewer")` — **the same call the agent's own tools would make with `actor="agent"`** for a tool they're refused; there is no second path to `"accepted"`. |
-| `GET /`, `GET /review` | the approval page (`app/static/review.html`) — its Approve button `fetch()`s the same `POST /approve/<capture_id>` above |
+| `GET /overlay/<capture_id>` | **reviewer token.** The evidence overlay JPEG, drawn for this request. `410` once the photo is no longer held. |
+| `POST /approve/<capture_id>` | **reviewer token.** Body: optional `{"note": str}`. `invoke("approve", ..., actor="reviewer")`. |
+| `POST /reject/<capture_id>` | **reviewer token.** Body: optional `{"note": str}`. `invoke("reject", ..., actor="reviewer")`. |
+| `POST /resolve_duplicate/<capture_id>` | **reviewer token.** Body: `{"is_duplicate": true or false, "note": str}`. |
+| `GET /`, `GET /review` | the review page (`app/static/review.html`) — its buttons `fetch()` the reviewer routes above |
+
+**The reviewer is authenticated, not just named.** The reviewer routes need
+`Authorization: Bearer <reviewer token>` and answer `401` without it, before any `invoke()` is
+made. The token is `REVIEWER_TOKEN`, or one `make run` generates and prints; the Lambda adapter
+takes it only from `REVIEWER_TOKEN` and keeps the routes closed without one. The review page
+keeps the token in the tab's `sessionStorage`. The agent's own `actor="agent"` path never has
+the token and never reaches these verbs.
+
+**Photos.** An upload is deleted as soon as the loop has read it, unless the capture escalated:
+then it is held, in the server's temporary directory and never in a record, so the reviewer can
+see it, and deleted the moment the capture leaves the review queue. At most 64 are held; past
+that the oldest is deleted and its overlay answers `410`.
 
 ```sh
 make run &
 curl -s http://127.0.0.1:8080/health
 curl -s -X POST --data-binary @data/synthetic/not_doc.jpg \
   -H 'Content-Type: image/jpeg' http://127.0.0.1:8080/inspect
-# open http://127.0.0.1:8080/ in a browser to approve the resulting escalation
+# open http://127.0.0.1:8080/, paste the printed reviewer token, and reject or approve it
 ```
+
+## MCP server (`app/mcp_server.py`)
+
+A stdio MCP server that lets an LLM agent drive the same loop. It offers the agent tools
+(`inspect_capture`, `decide_capture`, `request_recapture`, `compare_captures`, `escalate`), the
+reads (`get_capture`, `get_trace`), `open_capture` and `attach_retake` for getting a local photo
+into a slot, and `run_loop` (the deterministic `process_capture`). Every agent tool and read is
+the same `invoke(..., actor="agent")` the loop makes, so the same state guards apply: an agent
+calling `decide_capture` on an escalated capture gets a `StateError`, not a new verdict.
+`open_capture` and `attach_retake` decide nothing and sit outside `invoke`, exactly as
+`POST /inspect` and `POST /retake` do: they are the same photo-arrival plumbing
+(`AgentLoop.open_capture`, `AgentLoop.attach_image`), and `attach_image` only fills an open,
+unmeasured retake slot. A JSON-RPC batch (an array) is answered `-32600 Invalid Request`. The human
+verbs are not offered, and a call to one is refused as an unknown tool. Every tool description
+says what the tool does not do. Standard library only: newline-delimited JSON-RPC on
+stdin/stdout, protocol versions 2024-11-05 through 2025-11-25.
+
+Client configuration (absolute paths): command `<clone>/.venv/bin/python`, args
+`["<clone>/app/mcp_server.py"]`. `tests/test_mcp_server.py` drives it over stdio.
 
 ## Layout
 
@@ -408,60 +565,66 @@ src/secondlook/
   perception.py   inspect(): rectify first, then the other seven, timed
   policy.py       decide(): the cascade, first match wins, every clause recorded
   policy.toml     the committed threshold table and perception parameters
-  agent_loop.py   invoke(tool, args, actor) chokepoint + process_capture loop driver
+  agent_loop.py   invoke(tool, args, actor) chokepoint + state guards + process_capture driver
+  overlay.py      the evidence overlay, drawn with OpenCV per request
+  service.py      the HTTP routes, the reviewer-token check, the held-photo rule
 app/
-  server.py       the local HTTP serving layer
+  server.py       the stdlib HTTP adapter (make run, EC2)
+  mcp_server.py   the stdio MCP adapter over the agent tools
   smoke.py        the smoke command: starts its own server, hits /health + one /inspect
-  static/review.html   the approval page; its button calls the same invoke() the tools call
+  static/review.html   the review page; its buttons call the same invoke() the tools call
 deploy/
-  handler.py      the Lambda Function URL entry point, same chokepoint as server.py
-  Dockerfile      arm64 container image on public.ecr.aws/lambda/python:3.13
+  handler.py      the Lambda Function URL adapter, same routes as server.py
+  Dockerfile      arm64 Lambda container image on public.ecr.aws/lambda/python:3.13
   build.sh        local image build — no AWS credential needed
   deploy.sh       ECR push + function create/update + Function URL (owner-run only)
-  smoke_local.py  runs the built image's handler against a committed sample
+  ec2/Dockerfile  the EC2 image: app/server.py on python:3.13-slim
+  ec2/user-data.sh     the EC2 first-boot script (clones this repo, builds, runs on port 80)
+  smoke_local.py  runs the Lambda handler in-process against a committed sample
   iam-policy.json the permissions deploy.sh needs
 eval/run_eval.py        the evaluation harness; writes docs/evaluation.md
-docs/                   report.md, submission.md, architecture.md + .mmd + .svg,
-                        agent-workflow.md + .mmd + .svg, evaluation.md, deploy.md,
-                        video-script.md
 tools/make_samples.py   the synthetic-set generator (seed 20260908)
 tools/run_demo.py       runs the demo end to end, prints the trace
+tools/make_hero.py      draws docs/hero.jpg from a real run
+tools/build_replay.py   builds the static replay site of a recorded run (build-pages.sh)
 data/synthetic/         17 samples + manifest.json ground truth + LICENSE (MIT)
 models/README.md        no weights vendored; the classical text path is the default
-tests/                  test_metrics, test_policy, test_schema, test_samples, test_opencv_version,
-                        test_agent_loop, test_handler, test_deploy_handler
+docs/                   report, submission copy, diagrams, evaluation, deploy runbook,
+                        video script, real-photo protocol, hero image
+tests/                  metrics, policy, schema, samples, OpenCV version, agent loop, overlay,
+                        HTTP, Lambda adapter, MCP, evaluation, replay
 ```
 
 ## Deployment
 
-The target is one AWS Lambda function, packaged as a **container image** on **arm64
-(Graviton2)**, 2048 MB, Python 3.13, behind a **Lambda Function URL** — no load balancer, no API
-Gateway, nothing billing while idle. 2048 MB is above the 1,769 MB point where Lambda allocates
-a full vCPU, and this pipeline is CPU-bound. Lambda's synchronous payload cap is 6 MB, so both
-entry points reject a body over 4 MB with `413 payload_too_large`.
+**Live endpoint: none yet.** A live screen-share of the running local server — `make run`,
+`tools/run_demo.py` and the review page — is available to judges on request via a Devpost
+message.
 
-Considered and rejected:
+**Lambda: built, blocked, not pending.** The designed target is one AWS Lambda function,
+packaged as a container image on arm64 (Graviton2), 2048 MB, Python 3.13, behind a Lambda
+Function URL — no load balancer, no API Gateway, nothing billing while idle. The only AWS
+account available for this submission is a Free Plan "Project" whose Organization-level Service
+Control Policy denied `ecr:CreateRepository` and `lambda:CreateFunction` outright when it was
+tried in `us-east-1`, on both the container path and a sized-and-verified `.zip` fallback. The
+attempt log with the real AWS errors is in [`docs/deploy.md`](./docs/deploy.md).
+`deploy/deploy.sh` is committed and idempotent, now also requires `REVIEWER_TOKEN`, and no
+automation runs it.
 
-- **AWS App Runner** — "will no longer accept new customers starting on April 30, 2026"
-  (<https://aws.amazon.com/apprunner/>). For an account that has never used it, it is
-  unavailable, not merely inadvisable.
-- **Amazon ECS Express Mode**, AWS's named App Runner replacement — it provisions an
-  Application Load Balancer plus at least one always-running Fargate task, which bill
-  continuously at zero traffic, and its documented continuous-deployment path is GitHub
-  Actions; this repository uses no CI.
-- **EC2, plain Fargate, SageMaker endpoints** — always-on compute for a workload that is idle
-  between requests. **API Gateway** — a Function URL already gives HTTPS and public access.
+**EC2: prepared, owner-launched.** Another project in the same AWS organization was deployed
+to an EC2 instance in `ap-southeast-2` through the console on 2026-09-11, so the same path is
+prepared here:
+one `t3.micro` running `app/server.py` — the same routes, the reviewer token required — from
+`deploy/ec2/Dockerfile`, built on first boot by `deploy/ec2/user-data.sh` from this public
+repository. [`docs/deploy.md`](./docs/deploy.md#ec2-console-deploy) has every console field. It
+has not been launched yet; this section will carry the URL and its verification output once it
+has.
 
-`deploy/deploy.sh` is committed and idempotent, and no automation runs it. Creating the AWS
-account and pushing the container image are owner actions. The runbook, with the build / smoke
-/ deploy / verify steps and the rollback command, is [`docs/deploy.md`](./docs/deploy.md).
-
-**Live endpoint: not deployed — blocked, not pending.** The only AWS account available for
-this submission is a Free Plan "Project" whose Organization-level Service Control Policy
-denies `ecr:CreateRepository` and `lambda:CreateFunction` outright, confirmed against the
-real account on both the container path and a sized-and-verified `.zip` fallback. This is
-an account-tier restriction, not a gap in this entry's code — the full attempt log with
-real AWS error output is in [`docs/deploy.md`](./docs/deploy.md#deploying-second-look).
+Considered and rejected: **AWS App Runner** — "will no longer accept new customers starting on
+April 30, 2026" (<https://aws.amazon.com/apprunner/>); **Amazon ECS Express Mode** — an
+Application Load Balancer plus an always-running Fargate task billing at zero traffic, and a
+documented continuous-deployment path through GitHub Actions, which this repository does not
+use; **API Gateway** — a Function URL already gives HTTPS and public access.
 
 ## What is not built
 
@@ -470,14 +633,15 @@ Stated here so nothing above reads as a claim it isn't:
 - `apply.py` / `store.py` — S3-backed persistence. State is in memory, so a restart or a new
   Lambda execution environment starts with an empty batch.
 - Structured CloudWatch logging, one line per trace entry.
-- `overlay.py` — the annotated evidence image (quad, glare boxes, blur tiles, text boxes).
-- `src/secondlook/handler.py` — `deploy/handler.py` is the working interim Lambda entry point.
-- The browser *agent lane* (an `index.html` with a drop zone and a verdict panel). The review
-  lane, `app/static/review.html`, is built.
-- The `override`, `discard` and `close_batch` human verbs, and an HTTP route for
-  `resolve_duplicate`.
+- `src/secondlook/handler.py` — `deploy/handler.py` is the working Lambda adapter.
+- The browser *agent lane* (a page with a drop zone and a verdict panel). The review lane,
+  `app/static/review.html`, is built; photos are posted with `curl`, the demo script or MCP.
+- The `override`, `discard` and `close_batch` human verbs.
 - The DNN text detector (`dnn.TextDetectionModel_DB` over ONNX weights).
-- A real-photograph evaluation set (`data/real/`).
+- A real-photograph evaluation set (`data/real/`); its protocol is written
+  ([`docs/real-photo-set.md`](./docs/real-photo-set.md)), the photos are not.
+- HTTPS for the EC2 path: it serves plain HTTP on port 80, so the reviewer token keeps the
+  review routes from casual callers, not from someone watching the network.
 
 ## Documentation
 
@@ -487,9 +651,10 @@ Stated here so nothing above reads as a claim it isn't:
 | [`docs/submission.md`](./docs/submission.md) | the Devpost write-up and the submission status |
 | [`docs/architecture.md`](./docs/architecture.md) | architecture diagram ([`.svg`](./docs/architecture.svg), [`.mmd`](./docs/architecture.mmd)) — OpenCV 5 and AWS components, drawn as built |
 | [`docs/agent-workflow.md`](./docs/agent-workflow.md) | agent workflow diagram ([`.svg`](./docs/agent-workflow.svg), [`.mmd`](./docs/agent-workflow.mmd)) — perception, decision, action, and the human lane |
-| [`docs/evaluation.md`](./docs/evaluation.md) | generated evaluation report: task success, failure cases, limitations |
-| [`docs/deploy.md`](./docs/deploy.md) | the deployment runbook (owner-run) |
-| [`docs/video-script.md`](./docs/video-script.md) | the script and shot list the demo video was produced from |
+| [`docs/evaluation.md`](./docs/evaluation.md) | generated evaluation report: task success (isolated and shared batch), failure cases, limitations |
+| [`docs/real-photo-set.md`](./docs/real-photo-set.md) | the protocol for the real-photograph set (not yet collected) |
+| [`docs/deploy.md`](./docs/deploy.md) | the deployment runbook: Lambda (blocked) and the EC2 console deploy (owner-run) |
+| [`docs/video-script.md`](./docs/video-script.md) | the script and shot list for the demo video |
 
 ## Licence
 
@@ -497,5 +662,6 @@ MIT — see [`LICENSE`](./LICENSE).
 
 The sample data is synthetic and ours: `tools/make_samples.py` renders it from a fixed seed,
 and it is MIT (`data/synthetic/LICENSE`). No real photographs and no model weights are
-shipped. A real set, if one is added, will be owner-shot or
-[CORD](https://github.com/clovaai/cord) under CC BY 4.0 with attribution.
+shipped. A real set, if one is added, will be owner-shot under the protocol in
+[`docs/real-photo-set.md`](./docs/real-photo-set.md), or [CORD](https://github.com/clovaai/cord)
+under CC BY 4.0 with attribution.

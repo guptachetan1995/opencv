@@ -2,87 +2,247 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Second Look — review</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
-  h1 { font-size: 1.3rem; }
-  p.lede { color: #444; }
-  .item { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-  .item h3 { margin: 0 0 .25rem; font-family: monospace; font-size: 1rem; }
-  .item .reason { color: #a33; font-weight: 600; }
-  .item .text { color: #333; margin: .35rem 0; }
-  .row { display: flex; gap: .5rem; margin-top: .5rem; }
-  .row input[type=text] { flex: 1; padding: .35rem; }
-  .row button { padding: .35rem .9rem; cursor: pointer; }
-  #empty { color: #666; }
-  #status { color: #a33; font-size: .9rem; min-height: 1.2em; }
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #555555; --line: #d0d0d0; --card: #fafafa;
+    --bad: #b3261e; --ok: #1e6b35; --accent: #1f5fbf; --button: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171a; --fg: #e8e8e8; --muted: #a8a8a8; --line: #3a3d42; --card: #1d2024;
+      --bad: #f2877e; --ok: #7fcf98; --accent: #8ab4f8; --button: #2a2e33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg);
+         max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; line-height: 1.45; }
+  h1 { font-size: 1.35rem; margin: 0 0 .5rem; }
+  p.lede { color: var(--muted); margin-top: 0; }
+  code { font-size: .92em; }
+  .token { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+           border: 1px solid var(--line); border-radius: 8px; padding: .75rem; margin: 1rem 0; }
+  .token input { flex: 1 1 14rem; padding: .4rem; }
+  .token .state { color: var(--muted); font-size: .9rem; }
+  button { padding: .4rem .9rem; cursor: pointer; border: 1px solid var(--line);
+           border-radius: 6px; background: var(--button); color: var(--fg); font: inherit; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.reject { border-color: var(--bad); color: var(--bad); }
+  button.approve { border-color: var(--ok); color: var(--ok); }
+  .item { border: 1px solid var(--line); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;
+          background: var(--card); }
+  .item h2 { margin: 0; font-family: ui-monospace, monospace; font-size: 1.05rem; }
+  .item .reason { color: var(--bad); font-weight: 600; }
+  .item .text { margin: .35rem 0 .75rem; }
+  .item figure { margin: 0 0 .75rem; }
+  .item img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
+  .item .nophoto { color: var(--muted); font-style: italic; margin: 0 0 .75rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .25rem 0 .75rem; }
+  th, td { text-align: left; border-bottom: 1px solid var(--line); padding: .25rem .4rem;
+           font-family: ui-monospace, monospace; }
+  th { font-family: system-ui, sans-serif; color: var(--muted); font-weight: 600; }
+  tr.fired td { font-weight: 700; }
+  .measure { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+             gap: .15rem 1rem; font-size: .88rem; margin: 0 0 .75rem; }
+  .measure div { display: flex; justify-content: space-between; gap: .5rem;
+                 border-bottom: 1px dotted var(--line); }
+  .measure dt { color: var(--muted); font-family: ui-monospace, monospace; }
+  .measure dd { margin: 0; font-family: ui-monospace, monospace; }
+  label.note { display: block; font-size: .9rem; color: var(--muted); }
+  label.note input { display: block; width: 100%; padding: .4rem; margin-top: .2rem; }
+  .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+  #empty { color: var(--muted); }
+  #status { color: var(--bad); min-height: 1.3em; }
 </style>
 </head>
 <body>
   <h1>Second Look — review queue</h1>
   <p class="lede">
-    Every capture here escalated because the policy could not accept it on its own;
-    only a person can accept it now. <strong>Approve</strong> below calls
-    <code>POST /approve/&lt;capture_id&gt;</code> — the exact same
-    <code>invoke("approve", ..., actor="reviewer")</code> call the agent's own tools would
-    make with <code>actor="agent"</code> for a tool they're not allowed to call. There is
-    no second path to "accepted".
+    Every capture here escalated because the policy could not accept it on its own, and only
+    a person can move it now. Each button posts to <code>/approve/&lt;id&gt;</code>,
+    <code>/reject/&lt;id&gt;</code> or <code>/resolve_duplicate/&lt;id&gt;</code>, which call
+    <code>invoke(verb, …, actor="reviewer")</code> — the same function the agent's tools call
+    with <code>actor="agent"</code>, where these verbs are refused. Those routes also need the
+    reviewer token, so the reviewer is authenticated, not just named.
   </p>
 
+  <form class="token" id="token-form">
+    <label for="token">Reviewer token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" />
+    <button type="submit">Use token</button>
+    <button type="button" id="forget">Forget token</button>
+    <span class="state" id="token-state" aria-live="polite"></span>
+  </form>
+
+  <p id="status" role="status" aria-live="polite"></p>
   <div id="list"></div>
   <p id="empty" hidden>Nothing is waiting for review.</p>
-  <p id="status"></p>
 
   <script>
+    const TOKEN_KEY = 'secondlook.reviewerToken';
+    const MEASUREMENTS = [
+      'quad_found', 'page_area_fraction', 'second_quad_area_fraction', 'text_coverage_fraction',
+      'focus_min_tile', 'glare_over_text_frac', 'clipped_low_frac', 'clipped_high_frac',
+      'edge_touch_sides', 'bottom_band_has_text', 'nearest_distance', 'duplicate_of',
+    ];
+    let token = readToken();
+    const objectUrls = [];
+
+    function readToken() {
+      try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+    }
+    function writeToken(value) {
+      token = value;
+      try {
+        if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY);
+      } catch { /* storage blocked: the token lives in this page only */ }
+      showTokenState();
+    }
+    function showTokenState() {
+      document.getElementById('token-state').textContent =
+        token ? 'Token set for this tab.' : 'No token: you can read the queue, not act on it.';
+    }
+    function authHeaders(extra) {
+      return Object.assign({}, extra || {}, token ? { Authorization: `Bearer ${token}` } : {});
+    }
+    function el(tag, props, children) {
+      const node = document.createElement(tag);
+      Object.assign(node, props || {});
+      for (const child of children || []) node.append(child);
+      return node;
+    }
+    function fmt(value) {
+      if (Array.isArray(value)) return `[${value.map(fmt).join(', ')}]`;
+      if (typeof value === 'number' && !Number.isInteger(value)) return value.toFixed(4);
+      return String(value);
+    }
+    function setStatus(text) { document.getElementById('status').textContent = text; }
+
+    function firingsTable(verdict) {
+      const rows = verdict.firings.filter((f) => f.rule_id === verdict.rule_id
+        && (f.matched || verdict.rule_id !== 'uncertain'));
+      const table = el('table', {}, [
+        el('caption', { textContent: `Why: rule ${verdict.rule_id}` }),
+        el('tr', {}, ['metric', 'value', 'test', 'threshold', 'fired'].map(
+          (h) => el('th', { textContent: h, scope: 'col' }))),
+      ]);
+      for (const f of rows) {
+        const cells = [f.metric, fmt(f.value), f.comparison, fmt(f.threshold), f.matched ? 'yes' : 'no'];
+        table.append(el('tr', { className: f.matched ? 'fired' : '' },
+          cells.map((c) => el('td', { textContent: c }))));
+      }
+      return table;
+    }
+
+    function measurementList(m) {
+      const dl = el('dl', { className: 'measure' });
+      for (const key of MEASUREMENTS) {
+        if (!(key in m)) continue;
+        dl.append(el('div', {}, [el('dt', { textContent: key }), el('dd', { textContent: fmt(m[key]) })]));
+      }
+      return dl;
+    }
+
+    async function loadOverlay(captureId, figure) {
+      const note = el('p', { className: 'nophoto' });
+      if (!token) {
+        note.textContent = 'Enter the reviewer token to see the photo and what OpenCV found in it.';
+        figure.replaceChildren(note);
+        return;
+      }
+      const res = await fetch(`/overlay/${encodeURIComponent(captureId)}`, { headers: authHeaders() });
+      if (!res.ok) {
+        note.textContent = res.status === 410
+          ? 'The photo is no longer held for this capture.'
+          : res.status === 401 ? 'The reviewer token was refused.' : `Overlay failed (${res.status}).`;
+        figure.replaceChildren(note);
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      objectUrls.push(url);
+      figure.replaceChildren(
+        el('img', { src: url, alt: `Evidence overlay for ${captureId}: the photo as posted, and the rectified page with the regions each measurement found` }),
+        el('figcaption', { className: 'nophoto', textContent: 'Drawn by OpenCV for this request; not stored.' }),
+      );
+    }
+
+    function card(cap) {
+      const verdict = cap.verdict || { firings: [], rule_id: '', reason_text: '' };
+      const noteId = `note-${cap.capture_id}`;
+      const noteInput = el('input', { type: 'text', id: noteId, name: 'note' });
+      const figure = el('figure');
+      const suspected = cap.review_reason === 'suspected_duplicate' || verdict.rule_id === 'suspected_duplicate';
+      const isDuplicate = suspected && !cap.duplicate_resolved;
+      const buttons = [];
+      if (isDuplicate) {
+        buttons.push(el('button', { type: 'button', textContent: 'Is a duplicate',
+          onclick: (e) => act(e.target, 'resolve_duplicate', cap.capture_id, { is_duplicate: true, note: noteInput.value || null }) }));
+        buttons.push(el('button', { type: 'button', textContent: 'Not a duplicate',
+          onclick: (e) => act(e.target, 'resolve_duplicate', cap.capture_id, { is_duplicate: false, note: noteInput.value || null }) }));
+      }
+      buttons.push(el('button', { type: 'button', className: 'approve', textContent: 'Approve',
+        disabled: isDuplicate, title: isDuplicate ? 'Say whether it is a duplicate first' : '',
+        onclick: (e) => act(e.target, 'approve', cap.capture_id, { note: noteInput.value || null }) }));
+      buttons.push(el('button', { type: 'button', className: 'reject', textContent: 'Reject',
+        onclick: (e) => act(e.target, 'reject', cap.capture_id, { note: noteInput.value || null }) }));
+      for (const b of buttons) if (!token) b.disabled = true;
+
+      const item = el('article', { className: 'item' }, [
+        el('h2', { textContent: cap.capture_id }),
+        el('div', { className: 'reason', textContent: cap.review_reason || '' }),
+        el('p', { className: 'text', textContent: verdict.reason_text }),
+        figure,
+        firingsTable(verdict),
+        cap.measurements ? measurementList(cap.measurements) : el('span'),
+        el('label', { className: 'note', htmlFor: noteId, textContent: 'Note (optional)' }, [noteInput]),
+        el('div', { className: 'row' }, buttons),
+      ]);
+      item.dataset.captureId = cap.capture_id;
+      loadOverlay(cap.capture_id, figure);
+      return item;
+    }
+
     async function loadPending() {
       const res = await fetch('/pending');
       const items = await res.json();
-      const list = document.getElementById('list');
-      const empty = document.getElementById('empty');
-      list.innerHTML = '';
-      empty.hidden = items.length > 0;
-      for (const cap of items) {
-        const div = document.createElement('div');
-        div.className = 'item';
-        const verdictText = cap.verdict ? cap.verdict.reason_text : '';
-        div.innerHTML = `
-          <h3>${cap.capture_id}</h3>
-          <div class="reason">${cap.review_reason || ''}</div>
-          <div class="text">${verdictText}</div>
-          <div class="row">
-            <input type="text" placeholder="note (optional)" />
-            <button type="button">Approve</button>
-          </div>`;
-        const button = div.querySelector('button');
-        const input = div.querySelector('input');
-        button.addEventListener('click', () => approve(cap.capture_id, input.value, button));
-        list.appendChild(div);
-      }
+      while (objectUrls.length) URL.revokeObjectURL(objectUrls.pop());
+      document.getElementById('list').replaceChildren(...items.map(card));
+      document.getElementById('empty').hidden = items.length > 0;
     }
 
-    async function approve(captureId, note, button) {
-      const status = document.getElementById('status');
-      status.textContent = '';
+    async function act(button, verb, captureId, payload) {
+      setStatus('');
       button.disabled = true;
       try {
-        const res = await fetch(`/approve/${encodeURIComponent(captureId)}`, {
+        const res = await fetch(`/${verb}/${encodeURIComponent(captureId)}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note: note || null }),
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          status.textContent = `approve failed: ${body.error || res.status}`;
+          setStatus(`${verb} failed: ${body.error || res.status}`);
           button.disabled = false;
           return;
         }
         await loadPending();
       } catch (err) {
-        status.textContent = `approve failed: ${err}`;
+        setStatus(`${verb} failed: ${err}`);
         button.disabled = false;
       }
     }
 
+    document.getElementById('token-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('token');
+      writeToken(input.value.trim());
+      input.value = '';
+      loadPending();
+    });
+    document.getElementById('forget').addEventListener('click', () => { writeToken(''); loadPending(); });
+    showTokenState();
     loadPending();
   </script>
 </body>

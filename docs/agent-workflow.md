@@ -32,7 +32,7 @@ flowchart TD
   classDef escalate fill:#fde7e9,stroke:#c5221f,stroke-width:1px,color:#111111
   classDef retake fill:#fef7e0,stroke:#b06000,stroke-width:1px,color:#111111
 
-  CHOKE["agent_loop.invoke(tool, args, actor) — THE ONE CHOKEPOINT<br/>HUMAN_VERBS refuse actor != 'reviewer'; AGENT_TOOLS refuse actor != 'agent'.<br/>Every box below that says invoke(...) lands here; there is no second path.<br/>The review page's Approve button calls it exactly as the agent's tools do."]
+  CHOKE["agent_loop.invoke(tool, args, actor) — THE ONE CHOKEPOINT<br/>HUMAN_VERBS refuse actor != 'reviewer'; AGENT_TOOLS refuse actor != 'agent',<br/>and refuse any capture that is not received or measured (StateError).<br/>Every box below that says invoke(...) lands here; there is no second path.<br/>The review page's buttons and the MCP server call it exactly as the loop does."]
 
   subgraph PERCEPTION["1 · Perception"]
     OPEN["open_capture(image, parent_id) → attach_image<br/>ungated plumbing, not a gated tool"]
@@ -64,10 +64,10 @@ flowchart TD
   end
 
   subgraph HUMAN["4 · Human review lane — actor='reviewer' only"]
-    QUEUE["Human review queue.<br/>process_capture is a NO-OP once state == 'escalated':<br/>nothing advances this capture until a person calls<br/>invoke(verb, args, actor='reviewer'). That is the whole<br/>mechanism behind 'waits for human approval'."]
-    APPROVE["approve — refuses a suspected_duplicate<br/>until resolve_duplicate has run"]
-    REJECT["reject"]
-    RESOLVE["resolve_duplicate"]
+    QUEUE["Human review queue.<br/>process_capture is a NO-OP once state == 'escalated',<br/>and every agent tool refuses the capture:<br/>nothing advances it until a person calls<br/>invoke(verb, args, actor='reviewer') — over HTTP, with the reviewer token.<br/>The reviewer sees the evidence overlay and the clause that fired."]
+    APPROVE["approve — POST /approve/:id<br/>refuses a suspected_duplicate until resolve_duplicate has run"]
+    REJECT["reject — POST /reject/:id"]
+    RESOLVE["resolve_duplicate — POST /resolve_duplicate/:id"]
     OVERRIDE["override — NOT BUILT"]
     DISCARD["discard — NOT BUILT"]
     CLOSE["close_batch — NOT BUILT"]
@@ -198,9 +198,13 @@ guessing and hands the capture to a person.
 ## 4 · Human review lane
 
 An escalated capture stops moving. `process_capture` returns immediately once
-`state == "escalated"`, so nothing in the module advances that capture again until a person
+`state == "escalated"`, and every agent tool raises `StateError` for a capture that is not
+`received` or `measured` — so neither the loop nor an agent calling its tools directly can
+re-decide it, request a retake of it or move it anywhere. Nothing advances it until a person
 calls `invoke(verb, …, actor="reviewer")`. This is a mechanism, not a promise: there is no
 timer that eventually auto-approves and no agent path that reaches the accepted state.
+`tests/test_agent_loop.py` replays the escape that the state guard closes (re-decide the
+escalated capture, then request a retake of it) and asserts every agent tool is refused.
 
 The guard that enforces it lives in `invoke()` itself:
 
@@ -211,8 +215,11 @@ if tool in AGENT_TOOLS and actor != "agent":
     raise PermissionError(f"{tool!r} is an agent tool; actor was {actor!r}")
 ```
 
-`approve`, `reject` and `resolve_duplicate` are built; `override`, `discard` and
-`close_batch` are drawn dashed because they are not. One extra ordering rule is drawn in:
+`approve`, `reject` and `resolve_duplicate` are built, each with an HTTP route and a button
+on the review page, which shows the reviewer the evidence overlay and the clause that fired.
+Over HTTP those routes need the reviewer token (`Authorization: Bearer …`) and answer `401`
+without it. `override`, `discard` and `close_batch` are drawn dashed because they are not
+built. One extra ordering rule is drawn in:
 `approve` **refuses** a capture escalated as `suspected_duplicate` until `resolve_duplicate`
 has run, so a person cannot wave a possible duplicate through in one click.
 

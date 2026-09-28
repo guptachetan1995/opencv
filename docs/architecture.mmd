@@ -9,18 +9,21 @@ flowchart LR
   classDef note fill:#fafafa,stroke:#cccccc,stroke-width:1px,color:#444444
 
   subgraph CLIENT["Client"]
-    PHONE["Phone or laptop browser"]
-    REVIEW["app/static/review.html — the review lane<br/>Approve button fetches POST /approve/:capture_id"]
+    PHONE["Phone, laptop or curl"]
+    REVIEW["app/static/review.html — the review lane<br/>overlay, clause that fired, Approve / Reject / resolve duplicate<br/>Authorization: Bearer reviewer token"]
+    MCPCLIENT["An MCP client (an LLM agent)"]
     AGENTLANE["index.html agent lane<br/>NOT BUILT — design only, no code"]
   end
 
   subgraph LOCAL["Local host — make run"]
-    SERVER["app/server.py<br/>stdlib ThreadingHTTPServer, 127.0.0.1:8080<br/>MAX_BODY_BYTES = 4 MB"]
+    SERVER["app/server.py<br/>stdlib ThreadingHTTPServer, 127.0.0.1:8080<br/>(HOST, PORT override)"]
     SMOKE["app/smoke.py — make smoke"]
+    MCP["app/mcp_server.py — stdio MCP<br/>agent tools and reads only, never a human verb"]
   end
 
   subgraph AWS["AWS"]
     FURL["Lambda Function URL<br/>HTTPS, public, auth-type NONE<br/>BLOCKED — account SCP denies lambda:CreateFunction"]
+    EC2["EC2 t3.micro, ap-southeast-2 — app/server.py on port 80<br/>deploy/ec2/Dockerfile + user-data.sh<br/>PREPARED, NOT LAUNCHED — owner clicks Launch"]
     LAMBDA["deploy/handler.py<br/>Lambda container image, payload format 2.0<br/>arm64 / Graviton2, 2048 MB, Python 3.13<br/>MAX_BODY_BYTES = 4 MB"]
     FUTUREH["src/secondlook/handler.py<br/>NOT BUILT — planned module —<br/>deploy/handler.py is the interim stand-in"]
     ECR["Amazon ECR<br/>public.ecr.aws/lambda/python:3.13 base"]
@@ -30,7 +33,8 @@ flowchart LR
   end
 
   subgraph CORE["Agent loop — one chokepoint for agent and human alike"]
-    INVOKE["agent_loop.invoke(tool, args, actor)<br/>HUMAN_VERBS need actor=reviewer<br/>AGENT_TOOLS need actor=agent<br/>every mutation passes here or not at all"]
+    SERVICE["service.py — the HTTP routes, written once<br/>reviewer routes need the token (401 without)<br/>MAX_BODY_BYTES = 4 MB"]
+    INVOKE["agent_loop.invoke(tool, args, actor)<br/>HUMAN_VERBS need actor=reviewer<br/>AGENT_TOOLS need actor=agent, and a received or measured capture<br/>every mutation passes here or not at all"]
     PROC["agent_loop.process_capture<br/>perception → decision → action;<br/>a no-op once state == escalated"]
     PERC["perception.inspect() — the eight measurements, timed"]
     MEAS["Measurements — 31 frozen fields<br/>numbers, flags, boxes; no pixels, no decoded text"]
@@ -39,7 +43,7 @@ flowchart LR
     ACCEPT["accept → _mark_accepted → loop.accepted_hashes"]
     RETAKE["retake → request_recapture(failing_metric, hint_box)"]
     ESCALATE["escalate → human review queue"]
-    OVERLAY["overlay.py evidence image<br/>NOT BUILT — planned module"]
+    OVERLAY["overlay.py evidence image<br/>drawn per request with OpenCV, never stored<br/>GET /overlay/:id, reviewer token"]
   end
 
   subgraph CV["OpenCV 5 — opencv-python-headless==5.0.0.93, DNN engine 'new'"]
@@ -57,17 +61,24 @@ flowchart LR
   FOOTNOTE["Footnote: AWS App Runner is not used —<br/>closed to new customers 30 Apr 2026. See report.md § 5."]
   LEGEND["LEGEND — solid box or solid edge = built and exercised by tests.<br/>Dashed box or dashed edge = planned, not built; each dashed node<br/>names the module or step it waits on.<br/>This diagram is drawn AS BUILT; see architecture.md for<br/>where it diverges from the pre-code design. No AWS COOL service is used."]
 
-  PHONE -->|"POST /inspect, raw image bytes — 4 MB cap; Lambda sync payload cap is 6 MB"| SERVER
+  PHONE -->|"POST /inspect, /retake/:id — raw image bytes, 4 MB cap"| SERVER
   PHONE -.->|"POST /inspect — 4 MB cap; Lambda sync payload cap is 6 MB"| FURL
+  PHONE -.->|"the same routes, plain HTTP"| EC2
   PHONE --> REVIEW
   AGENTLANE -.-> SERVER
   SERVER --> REVIEW
-  REVIEW -->|"Approve — actor=reviewer"| INVOKE
+  REVIEW -->|"approve / reject / resolve_duplicate — token, actor=reviewer"| SERVICE
   SMOKE --> SERVER
+  MCPCLIENT -->|"JSON-RPC on stdio"| MCP
+  MCP -->|"actor=agent"| INVOKE
 
-  SERVER --> PROC
+  SERVER --> SERVICE
+  EC2 -.-> SERVICE
   FURL -.-> LAMBDA
-  LAMBDA --> PROC
+  LAMBDA --> SERVICE
+  SERVICE --> PROC
+  SERVICE -->|"human verbs, reads"| INVOKE
+  SERVICE --> OVERLAY
   LAMBDA -.-> FUTUREH
   DEPLOYSH -->|"owner-run, no CI"| ECR
   ECR --> LAMBDA
@@ -86,7 +97,7 @@ flowchart LR
   RETAKE -->|"new capture, re-measured"| PROC
   ACCEPT -->|"seeds the duplicate measurement of later captures"| M8
   ESCALATE -->|"approve / reject / resolve_duplicate — human only"| INVOKE
-  VERDICT -.-> OVERLAY
+  VERDICT --> OVERLAY
 
   PERC --> M1
   M1 --> M2
@@ -98,8 +109,8 @@ flowchart LR
   M1 --> M8
   M5 -.->|"unbuilt alternative"| M5DNN
 
-  class PHONE,REVIEW,SERVER,SMOKE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,M1,M2,M3,M4,M5,M6,M7,M8 built
-  class AGENTLANE,FURL,FUTUREH,S3,CW,OVERLAY,M5DNN unbuilt
+  class PHONE,REVIEW,SERVER,SMOKE,MCP,MCPCLIENT,SERVICE,LAMBDA,ECR,DEPLOYSH,PROC,PERC,MEAS,POLICY,VERDICT,ACCEPT,RETAKE,OVERLAY,M1,M2,M3,M4,M5,M6,M7,M8 built
+  class AGENTLANE,FURL,EC2,FUTUREH,S3,CW,M5DNN unbuilt
   class INVOKE choke
   class ESCALATE human
   class FOOTNOTE,LEGEND note

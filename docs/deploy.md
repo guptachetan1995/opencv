@@ -1,32 +1,140 @@
 # Deploying Second Look
 
-Second Look ships as a single Lambda container image behind a Lambda Function URL:
-arm64, no ALB, nothing billing while idle, upgrading to S3-backed capture storage later.
-**Deploying is a human-only action** — this document is the runbook a person follows;
-nothing in this repo's automation runs any of these commands for you.
+Two AWS paths serve the same routes (`src/secondlook/service.py`): a Lambda container image
+behind a Function URL, and one EC2 instance running `app/server.py`. **Deploying is a
+human-only action** — this document is the runbook a person follows; nothing in this repo's
+automation deploys anything.
 
-**Status: attempted 2026-09-17, blocked — not a code or config problem.** The owner's
-only available AWS account is a "Project" under AWS's Free Plan (Builder ID) product,
-which sits inside an AWS-managed Organization the account holder cannot see or
-administer (`settings.aws.com/projects`, management account ID `484394572314`). That
-Organization's Service Control Policy explicitly denies resource creation for this
-account, confirmed twice against the real account with the real IAM user this runbook
-creates:
+| Path | State |
+|---|---|
+| Lambda + Function URL (`deploy/deploy.sh`) | **Blocked**: attempted 2026-09-17 in `us-east-1`; the account's Organization Service Control Policy denies `ecr:CreateRepository` and `lambda:CreateFunction`. |
+| EC2 console deploy (`deploy/ec2/`) | **Prepared, not launched.** Every console field is below; the owner reviews them and clicks Launch. |
+
+Until one of them serves, a live screen-share of the running local server (`make run`,
+`tools/run_demo.py`, the review page) is available to judges on request via a Devpost message.
+
+## EC2 console deploy
+
+One `t3.micro` running the EC2 image (`deploy/ec2/Dockerfile`: `app/server.py` on
+`python:3.13-slim`), built on first boot by `deploy/ec2/user-data.sh` from the **public**
+repository, serving plain HTTP on port 80. It is the same route table as `make run`, with the
+reviewer routes behind a token generated on the instance.
+
+**Why EC2, and why this region.** The Lambda path is denied by the account's policy (below).
+Another project in the same AWS organization was deployed to EC2 through the console on
+2026-09-11, in `ap-southeast-2`, after `us-east-1` turned out to be blocked by an Organizations
+policy for it too — so `ap-southeast-2` is the one region this account has been seen to allow.
+Whether this account's policy also allows EC2 there is only settled by trying; if the launch is
+refused, record the console's error message in this file.
+
+**Before launching:** the public repository must already hold this version (the instance
+clones `main` of `github.com/guptachetan1995/opencv` at boot), and the owner has given a
+go-ahead in chat for this specific launch.
+
+### The fields (EC2 console > Instances > Launch instances)
+
+| Field | Value |
+|---|---|
+| Region (top-right selector) | **Asia Pacific (Sydney) `ap-southeast-2`** |
+| Name and tags > Name | `secondlook-demo` |
+| Application and OS Images | **Amazon Linux 2023 AMI** (Quick Start; 64-bit **x86**) |
+| Instance type | **`t3.micro`** (marked "Free tier eligible") |
+| Key pair (login) | **Proceed without a key pair** — nothing on the instance needs a login |
+| Network settings > VPC / Subnet | the default VPC, "No preference" |
+| Network settings > Auto-assign public IP | **Enable** |
+| Firewall (security groups) | **Create security group**; name `secondlook-demo-sg`; description `Second Look demo: HTTP only` |
+| Security group rules | **Untick** "Allow SSH traffic from"; **tick** "Allow HTTP traffic from the internet" (TCP 80 from 0.0.0.0/0); leave HTTPS unticked (there is no certificate) |
+| Configure storage | the default: 1 × 8 GiB gp3 root volume |
+| Advanced details > Metadata version | **V2 only (token required)** |
+| Advanced details > User data | the whole of [`deploy/ec2/user-data.sh`](../deploy/ec2/user-data.sh), pasted as text ("already base64-encoded" unticked) |
+| Summary > Number of instances | 1 |
+
+The owner reviews the summary panel against this table and clicks **Launch instance**. The
+agent filling the form never clicks it.
+
+### What the boot script does
+
+`user-data.sh` runs once as root: `dnf install -y docker git`, starts Docker, clones the public
+repository to `/opt/secondlook`, builds `deploy/ec2/Dockerfile`, generates a 32-hex-character
+reviewer token with Python's `secrets` module into a root-only file, and runs the container
+with `--restart unless-stopped -p 80:8080 -e REVIEWER_TOKEN=…`. The token never appears in the
+script, the console form or the repository; the script prints it once to the instance's system
+log. First boot takes a few minutes (the image build downloads the pinned wheels).
+
+### After launch
+
+1. **Public address:** the instance's "Public IPv4 address" (or public DNS) on its details
+   page. The URL is `http://<public-ip>/`.
+2. **The reviewer token:** Instance > Actions > Monitor and troubleshoot > **Get system log**;
+   the line `second-look reviewer token: …` (the log can take a few minutes to appear). Keep it
+   out of any published text.
+3. **Verify** from the repository root, and paste the real output into this section. Run it
+   first, on the fresh instance, before step 4 or anyone else posts a photo: capture ids are
+   assigned in arrival order, so on a used instance `c_001`/`c_002` name other captures and the
+   retake line fails.
+
+   ```sh
+   BASE=http://<public-ip>
+   curl -s -w '\n' "$BASE/health"
+   curl -s -X POST --data-binary @data/synthetic/glare_text.jpg "$BASE/inspect" \
+     | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); v=d["verdict"]; print(d["capture_id"], d["state"], v["rule_id"], v["hint_box"], "successor:", d["successor_id"])'
+   curl -s -X POST --data-binary @data/synthetic/crop_bottom.jpg "$BASE/retake/c_002" \
+     | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); print(d["capture_id"], d["state"], d["verdict"]["rule_id"])'
+   curl -s -w ' %{http_code}\n' -X POST -d '{}' "$BASE/approve/c_001"
+   curl -s -o /dev/null -w '%{time_total}s\n' "$BASE/health"
+   ```
+
+   Expected: `{"status": "ok"}`, then `c_001 awaiting_retake glare_over_total [201, 1006, 462,
+   141] successor: c_002`, then `c_002 awaiting_retake bottom_edge_clipped`, then
+   `{"error": "reviewer token required"} 401`, then the round-trip time (informational only).
+4. Open `$BASE/` in a browser, paste the token, and check that a posted `not_doc.jpg` shows its
+   overlay and can be rejected.
+5. Then, and only then: add the URL to the README's Deployment section and the Devpost "Try it
+   out" links, and redraw the architecture diagram's AWS band with the EC2 node solid.
+
+### Exposure, cost and teardown
+
+- **What is public:** anyone with the URL can post a photo, read `/pending`, `/capture/<id>`
+  and `/trace/<id>` (measurements and verdicts, never pixels), and open the review page.
+  Approve, reject, resolve-duplicate and the photo overlay need the reviewer token. An
+  escalated photo is held on the instance until it is decided (at most 64, oldest deleted
+  first). Judges should post the committed synthetic samples, not real receipts.
+- **Plain HTTP:** there is no certificate, so the token protects the reviewer routes from
+  casual callers, not from someone observing the network between the reviewer and the
+  instance.
+- **State is in memory:** a container restart empties the batch.
+- **Cost:** `t3.micro` is free-tier eligible; AWS also bills public IPv4 addresses hourly. The
+  account is on AWS's Free Plan; check the Billing console that the instance is covered. Any
+  cost beyond that is the owner's decision.
+- **Teardown** after judging: terminate `secondlook-demo`, then delete `secondlook-demo-sg`.
+
+## Lambda + Function URL
+
+The designed target: one AWS Lambda function, packaged as a container image on arm64
+(Graviton2), 2048 MB, Python 3.13, behind a Lambda Function URL — no ALB, nothing billing while
+idle, upgrading to S3-backed capture storage later.
+
+**Status: attempted 2026-09-17, blocked — not a code or config problem.** The owner's only
+available AWS account is a "Project" under AWS's Free Plan (Builder ID) product, which sits
+inside an AWS-managed Organization the account holder cannot see or administer
+(`settings.aws.com/projects`). That Organization's Service Control Policy explicitly denies
+resource creation for this account, confirmed twice against the real account with the real IAM
+user this runbook creates (account ids replaced with `<account>` and `<management-account>`):
 
 ```
 $ aws ecr create-repository --repository-name secondlook-lambda ...
 An error occurred (AccessDeniedException) when calling the CreateRepository operation:
-User: arn:aws:iam::461929939657:user/secondlook-deploy is not authorized to perform:
-ecr:CreateRepository on resource: arn:aws:ecr:us-east-1:461929939657:repository/secondlook-lambda
+User: arn:aws:iam::<account>:user/secondlook-deploy is not authorized to perform:
+ecr:CreateRepository on resource: arn:aws:ecr:us-east-1:<account>:repository/secondlook-lambda
 with an explicit deny in a service control policy:
-arn:aws:organizations::484394572314:policy/o-wihzhpc2xi/service_control_policy/p-5h3g8re9
+arn:aws:organizations::<management-account>:policy/o-wihzhpc2xi/service_control_policy/p-5h3g8re9
 
 $ aws lambda create-function --function-name secondlook --runtime python3.13 ...
 An error occurred (AccessDeniedException) when calling the CreateFunction operation:
-User: arn:aws:iam::461929939657:user/secondlook-deploy is not authorized to perform:
-lambda:CreateFunction on resource: arn:aws:lambda:us-east-1:461929939657:function:secondlook
+User: arn:aws:iam::<account>:user/secondlook-deploy is not authorized to perform:
+lambda:CreateFunction on resource: arn:aws:lambda:us-east-1:<account>:function:secondlook
 with an explicit deny in a service control policy:
-arn:aws:organizations::484394572314:policy/o-wihzhpc2xi/service_control_policy/p-5h3g8re9
+arn:aws:organizations::<management-account>:policy/o-wihzhpc2xi/service_control_policy/p-5h3g8re9
 ```
 
 The second attempt ruled out "it's specific to container images": a Lambda `.zip`
@@ -34,10 +142,10 @@ deployment package was sized against the real pinned dependencies
 (`opencv-python-headless==5.0.0.93` + `numpy==2.5.3`, the exact `manylinux_2_28_aarch64`
 wheels this project's Docker image installs) — 140 MB unpacked, comfortably inside
 Lambda's 250 MB unzipped ceiling — but `lambda:CreateFunction` itself is denied by the
-identical policy, independent of packaging format. There is no packaging trick around
-this; it is an account-tier guardrail, not a size or dependency problem.
+identical policy, independent of packaging format. Both attempts were in `us-east-1`; a retry
+in `ap-southeast-2` has not been made.
 
-Lifting it needs either activating AWS's "advanced features" on this account (per
+Lifting the policy needs either activating AWS's "advanced features" on this account (per
 AWS's own docs: irreversible, requires a paid upgrade first, and restructures the whole
 organization, which also hosts another project's live deployment) or a separate,
 unrestricted AWS account. Neither was available for this submission — no spare email
@@ -46,7 +154,7 @@ honestly rather than pursue either. **This runbook is otherwise correct and comp
 if an unrestricted AWS account becomes available later, every command below should work
 unmodified.
 
-## Prerequisites
+### Prerequisites
 
 - **Build step**: Docker (Engine or Desktop) with a version that supports
   `docker build --platform`. Nothing else — no AWS account, no credentials.
@@ -74,7 +182,7 @@ $ python3 --version
 Python 3.13.13
 ```
 
-## Environment variables
+### Environment variables
 
 None of these are ever hard-coded in any script — every one is read as `${VAR:-default}`.
 
@@ -88,20 +196,22 @@ None of these are ever hard-coded in any script — every one is read as `${VAR:
 | `PLATFORM` | `build.sh` | `linux/arm64` |
 | `TIMEOUT_SECONDS` | `deploy.sh` | `30` |
 | `MEMORY_MB` | `deploy.sh` | `2048` (above the 1,769 MB point where Lambda allocates a full vCPU — this pipeline is CPU-bound) |
+| `REVIEWER_TOKEN` | `deploy.sh` (required, no default), then the function's environment | none — `deploy.sh` stops if it is unset, because the Function URL is public and the reviewer routes need it |
 
 If you override `FUNCTION_NAME` or `ECR_REPOSITORY` from their defaults, update the
 matching resource ARNs in [`deploy/iam-policy.json`](../deploy/iam-policy.json) to
 match — the policy's ARNs are pinned to the default names (`secondlook`,
 `secondlook-lambda`), not derived from these variables.
 
-## Step 1 — Build (local, no AWS credential needed)
+### Step 1 — Build (local, no AWS credential needed)
 
 ```
 # from the repository root
 IMAGE_TAG=secondlook-lambda:local bash deploy/build.sh
 ```
 
-Real captured output from this environment:
+Real captured output from this environment, on 2026-09-17 (before `service.py` and
+`overlay.py` existed; the image copies all of `src/secondlook`, so they ride along unchanged):
 
 ```
 #0 building with "desktop-linux" instance using docker driver
@@ -149,10 +259,7 @@ built secondlook-lambda:local for linux/arm64
 
 The `pip install` and `COPY` layers show `CACHED` here because an identical layer was
 already built locally in this environment during plan review; the image still exports
-and tags successfully. A clean host with no prior build cache will show these layers
-actually executing (`RUN pip install ...` printing real package-resolution output)
-instead of `CACHED`, with the same final `built secondlook-lambda:local for
-linux/arm64` line.
+and tags successfully.
 
 Confirms the target platform actually took effect:
 
@@ -161,7 +268,7 @@ $ docker image inspect secondlook-lambda:local --format '{{.Architecture}}'
 arm64
 ```
 
-## Step 2 — Local smoke check (recommended)
+### Step 2 — Local smoke check (recommended)
 
 Docker-free, AWS-free: calls `handler.handler()` in-process against the committed
 `data/synthetic/clean_a.jpg` sample.
@@ -171,20 +278,20 @@ Docker-free, AWS-free: calls `handler.handler()` in-process against the committe
 .venv/bin/python deploy/smoke_local.py
 ```
 
-Real captured output:
+Real captured output (2026-09-28):
 
 ```
-GET /health -> {'statusCode': 200, 'headers': {'Content-Type': 'application/json'}, 'body': '{"status": "ok"}'}
+GET /health -> {'statusCode': 200, 'headers': {'Content-Type': 'application/json'}, 'body': '{"status": "ok"}', 'isBase64Encoded': False}
 POST /inspect -> verdict: {'outcome': 'accept', 'rule_id': 'accept', 'reason_code': 'clean', 'reason_text': 'Every measurement is comfortably inside its band.', 'hint_box': None, 'firings': [...], 'decided_by': 'policy'}
 ```
 
 (`firings` is a full per-rule diagnostic list — truncated above for readability; the
 real run prints every rule's matched/value/threshold triple.) Exit code `0`.
 
-## Step 3 — Push and deploy (owner-run only, needs AWS credentials)
+### Step 3 — Push and deploy (owner-run only, needs AWS credentials)
 
 ```
-AWS_REGION=us-east-1 AWS_PROFILE=default bash deploy/deploy.sh
+AWS_REGION=us-east-1 AWS_PROFILE=default REVIEWER_TOKEN=<a long random secret> bash deploy/deploy.sh
 ```
 
 **Typical output, not executed in this environment (no AWS credentials configured
@@ -202,9 +309,10 @@ function url: https://abcdefghij1234567890.lambda-url.us-east-1.on.aws/
 
 `deploy.sh` is idempotent — every AWS resource is checked before it's created, so
 re-running it against an existing deployment only pushes a new image tag and updates
-the function's code, without recreating the ECR repo, execution role, or Function URL.
+the function's code and its `REVIEWER_TOKEN`, without recreating the ECR repo, execution
+role, or Function URL.
 
-## Step 4 — Verify the deployed URL
+### Step 4 — Verify the deployed URL
 
 ```
 curl -s "$FUNCTION_URL/health"
@@ -219,9 +327,9 @@ started Lambda execution environments, each with its own in-memory `AgentLoop` �
 shared store exists yet (the S3-backed `store.py` is not built). A `GET /pending` right after
 a `POST /inspect` is **not** guaranteed to see it if a different warm environment
 handles the second request. Verify sequentially, one environment at a time, until
-`store.py` lands.
+`store.py` lands. (The EC2 path has one process and no such split.)
 
-## Rollback
+### Rollback
 
 Every pushed image tag stays in ECR until pruned, so rollback is just repointing the
 function at a previous tag — no new resources needed.
@@ -237,25 +345,26 @@ aws lambda update-function-code --function-name "$FUNCTION_NAME" \
 (Typical output, not executed in this environment — no AWS credentials configured
 here.)
 
-## Cost
+### Cost and exposure
 
 Function URLs cost nothing beyond the Lambda invocation itself — no ALB, no API
 Gateway. At demo-scale traffic this stays inside AWS's Lambda free tier ("one million
 requests and 400,000 GB-seconds per month", from <https://aws.amazon.com/lambda/pricing/>).
-The Function URL is created with `--auth-type NONE` (public, unauthenticated) so
-judges can hit it directly without sharing AWS credentials — a deliberate,
-documented tradeoff, not an oversight. The handler's existing 4 MB payload guard
-(`MAX_BODY_BYTES` in `deploy/handler.py`) limits abuse somewhat; adding an AWS Budget
-alarm is a named follow-up, not built here.
+The Function URL is created with `--auth-type NONE` so judges can call it without AWS
+credentials. That no longer exposes the human gate: approve, reject, resolve-duplicate and the
+photo overlay answer `401` without the reviewer token, which `deploy.sh` sets as the function's
+`REVIEWER_TOKEN`. What stays public is posting a photo and reading measurements and traces. The
+4 MB payload guard (`MAX_BODY_BYTES` in `src/secondlook/service.py`) limits abuse somewhat;
+adding an AWS Budget alarm is a named follow-up, not built here.
 
 ## Known limitations
 
-- **In-memory state**: `AgentLoop` lives only for one warm Lambda execution
-  environment's lifetime. No cross-invocation persistence exists until the planned
-  S3-backed `store.py` is built.
+- **In-memory state**: `AgentLoop` lives only for one process (EC2) or one warm Lambda
+  execution environment. No persistence exists until the planned S3-backed `store.py` is built.
 - **Cold start**: unmeasured until a real deploy; the design estimate for a roughly
   300–400 MB OpenCV container image is a few seconds cold, well under half a second warm.
-- **`deploy/handler.py` is an interim stand-in** for a planned
-  `src/secondlook/handler.py`, which doesn't exist yet. When that module is built,
-  its routes fold in from `deploy/handler.py` and `deploy/Dockerfile`'s `COPY`/`CMD`
-  move to reference it, in the same change.
+- **`deploy/handler.py` is the Lambda adapter**, a thin translation onto
+  `src/secondlook/service.py`; a planned `src/secondlook/handler.py` would only move it.
+- **The EC2 image has not been built yet**: its first build is the instance's first boot.
+  Docker was not running on the machine this was prepared on, so the verification output
+  above is what establishes that it works.

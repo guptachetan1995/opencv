@@ -6,6 +6,13 @@ call and every human verb mutates a ``Capture`` only by passing through ``invoke
 ``process_capture`` (the loop driver) never touches a ``Capture`` directly, and neither
 does anything else in this module.
 
+Two guards, not one. ``invoke`` checks the *actor* (an agent never reaches a human verb);
+each handler then checks the capture's *state* (an agent tool only acts on a capture that
+is still in the agent's part of the lifecycle — ``received`` or ``measured``). Without the
+second guard an agent could re-decide an escalated capture back to ``measured`` and ask
+for a retake of it, walking it out of the review queue without any person acting. A read
+(``get_capture``) returns a fresh dict, never the live ``Capture``.
+
 This is an in-memory precursor to a planned ``apply.py`` / ``store.py`` pair (S3-backed
 persistence, not built). When that layer lands, it folds this module's ``invoke`` into
 ``apply.py`` rather than keeping two chokepoints.
@@ -30,6 +37,16 @@ from secondlook.policy import Policy, decide, load_policy
 from secondlook.schema import Measurements, TraceEntry, Verdict
 
 State = str  # "received" | "measured" | "awaiting_retake" | "escalated" | "accepted" | "rejected"
+
+# The states an agent tool may act on. Everything past them belongs to someone else:
+# "awaiting_retake" to the person holding the phone, "escalated" to the reviewer, and
+# "accepted" / "rejected" to nobody.
+AGENT_STATES = frozenset({"received", "measured"})
+
+
+class StateError(RuntimeError):
+    """A tool or verb was called on a capture in a state it does not act on."""
+
 
 # The agent/human split, enforced at the chokepoint rather than merely documented: the
 # human-only verbs are never registered as agent tools, and tests assert it.
@@ -133,8 +150,17 @@ class AgentLoop:
 
     def attach_image(self, capture_id: str, image_path: str | Path) -> None:
         """The retake photo arriving for a slot ``request_recapture`` already opened.
-        Also plumbing: no measurement, decision or state change happens here."""
-        self.captures[capture_id].image_path = Path(image_path)
+        Also plumbing: no measurement, decision or state change happens here. It refuses
+        any other capture, and any slot a tool has already acted on, so a photo can never
+        be swapped under one that was measured, escalated or decided. (A slot whose photo
+        failed to decode has no trace yet, so a new photo can still be attached to it.)"""
+        cap = self.captures[capture_id]
+        if cap.parent_id is None or cap.state != "received" or cap.trace:
+            raise StateError(
+                f"{capture_id} is not an open retake slot (state={cap.state!r}); "
+                "only a slot request_recapture opened takes a retake photo"
+            )
+        cap.image_path = Path(image_path)
 
     def trace_chain(self, capture_id: str) -> list[dict[str, Any]]:
         """Flatten this capture's trace and every ancestor's into one globally-numbered
@@ -188,8 +214,10 @@ def invoke(
     tool: str, args: dict[str, Any] | None, actor: str, *, loop: AgentLoop | None = None
 ) -> Any:
     """The single chokepoint: every agent tool and every human verb is a call into this
-    function. Every mutation in this module happens here or not at all —
-    ``process_capture`` and the demo script only ever call this function."""
+    function. Every measurement, decision and state transition in this module happens here
+    or not at all — ``process_capture`` and the demo script only ever call this function.
+    The two plumbing calls outside it, ``AgentLoop.open_capture`` and ``attach_image``,
+    only create a slot and put a photo in it."""
     if actor not in ("agent", "reviewer"):
         raise ValueError(f"unknown actor: {actor!r}")
     handler = _HANDLERS.get(tool)
@@ -205,8 +233,21 @@ def invoke(
 # ---- agent tools -----------------------------------------------------------------------
 
 
-def _inspect_capture(loop: AgentLoop, capture_id: str) -> Measurements:
+def _agent_capture(loop: AgentLoop, capture_id: str, tool: str) -> Capture:
+    """The state half of the agent/human split: an agent tool only touches a capture that
+    is still ``received`` or ``measured``. Past that point the capture is waiting on a
+    person (a retake photo, a reviewer) or is final, and no agent call may move it."""
     cap = loop.captures[capture_id]
+    if cap.state not in AGENT_STATES:
+        raise StateError(
+            f"{tool} refused: {capture_id} is {cap.state!r}; agent tools act only on "
+            "received or measured captures"
+        )
+    return cap
+
+
+def _inspect_capture(loop: AgentLoop, capture_id: str) -> Measurements:
+    cap = _agent_capture(loop, capture_id, "inspect_capture")
     if cap.image_path is None:
         raise RuntimeError(f"{capture_id} has no image yet — attach_image before inspecting")
     measurements = inspect_file(
@@ -225,7 +266,7 @@ def _inspect_capture(loop: AgentLoop, capture_id: str) -> Measurements:
 
 
 def _decide_capture(loop: AgentLoop, capture_id: str) -> Verdict:
-    cap = loop.captures[capture_id]
+    cap = _agent_capture(loop, capture_id, "decide_capture")
     if cap.measurements is None:
         raise RuntimeError(f"{capture_id} has no measurement record; call inspect_capture first")
     parent_reason = None
@@ -254,15 +295,34 @@ def _decide_capture(loop: AgentLoop, capture_id: str) -> Verdict:
 
 
 def _request_recapture(
-    loop: AgentLoop, capture_id: str, failing_metric: str, hint_box: list[int] | None
+    loop: AgentLoop,
+    capture_id: str,
+    failing_metric: str | None = None,
+    hint_box: list[int] | None = None,
 ) -> str:
-    cap = loop.captures[capture_id]
+    """Only a capture whose own verdict says ``retake`` can be sent back for one, and the
+    metric and box it names are the verdict's — an agent may restate them, not replace
+    them."""
+    cap = _agent_capture(loop, capture_id, "request_recapture")
+    if cap.state != "measured" or cap.verdict is None or cap.verdict.outcome != "retake":
+        outcome = cap.verdict.outcome if cap.verdict else None
+        raise StateError(
+            f"request_recapture refused: {capture_id} has verdict {outcome!r}; "
+            "only a decided 'retake' capture can be sent back for a retake"
+        )
+    expected_metric = _FAILING_METRIC.get(cap.verdict.rule_id, cap.verdict.rule_id)
+    if failing_metric is not None and failing_metric != expected_metric:
+        raise ValueError(
+            f"{capture_id}'s verdict failed on {expected_metric!r}, not {failing_metric!r}"
+        )
+    if hint_box is not None and hint_box != cap.verdict.hint_box:
+        raise ValueError(f"{capture_id}'s verdict names hint_box {cap.verdict.hint_box}")
     successor_id = loop.open_capture(parent_id=capture_id)
     entry = cap.record(
         "agent",
         "request_recapture",
-        {"failing_metric": failing_metric},
-        {"hint_box": hint_box, "successor_id": successor_id},
+        {"failing_metric": expected_metric},
+        {"hint_box": cap.verdict.hint_box, "successor_id": successor_id},
     )
     cap.state = "awaiting_retake"
     loop.captures[successor_id].opened_by = (capture_id, entry.seq)
@@ -271,7 +331,11 @@ def _request_recapture(
 
 def _compare_captures(loop: AgentLoop, previous_id: str, new_id: str) -> str:
     previous = loop.captures[previous_id]
-    new = loop.captures[new_id]
+    new = _agent_capture(loop, new_id, "compare_captures")
+    if new.parent_id != previous_id or new.state != "received":
+        raise StateError(
+            f"compare_captures refused: {new_id} is not the unmeasured retake of {previous_id}"
+        )
     if previous.verdict is None:
         raise RuntimeError(f"{previous_id} has no verdict; nothing to compare against")
     if new.image_path is None:
@@ -292,8 +356,23 @@ def _compare_captures(loop: AgentLoop, previous_id: str, new_id: str) -> str:
     return status
 
 
-def _escalate(loop: AgentLoop, capture_id: str, reason: str) -> None:
-    cap = loop.captures[capture_id]
+def _escalate(loop: AgentLoop, capture_id: str, reason: str | None = None) -> None:
+    """Only a capture whose own verdict says ``escalate`` goes to the reviewer, under the
+    verdict's own reason code — an agent may restate it, not replace it. Relabelling a
+    suspected duplicate as ``uncertain_band`` would otherwise let the reviewer's approve
+    skip the duplicate question."""
+    cap = _agent_capture(loop, capture_id, "escalate")
+    if cap.state != "measured" or cap.verdict is None or cap.verdict.outcome != "escalate":
+        outcome = cap.verdict.outcome if cap.verdict else None
+        raise StateError(
+            f"escalate refused: {capture_id} has verdict {outcome!r}; "
+            "only a decided 'escalate' capture goes to the review queue"
+        )
+    if reason is not None and reason != cap.verdict.reason_code:
+        raise ValueError(
+            f"{capture_id}'s verdict escalates as {cap.verdict.reason_code!r}, not {reason!r}"
+        )
+    reason = cap.verdict.reason_code
     cap.record("agent", "escalate", {"reason": reason}, {"review_item": "opened"})
     cap.state = "escalated"
     cap.review_reason = reason
@@ -304,7 +383,7 @@ def _escalate(loop: AgentLoop, capture_id: str, reason: str) -> None:
 
 def _approve(loop: AgentLoop, capture_id: str, note: str | None = None) -> None:
     cap = _require_escalated(loop, capture_id)
-    if cap.review_reason == "suspected_duplicate" and not cap.duplicate_resolved:
+    if _suspected_duplicate(cap) and not cap.duplicate_resolved:
         raise RuntimeError(
             f"{capture_id} is a suspected duplicate; resolve_duplicate before approving"
         )
@@ -323,7 +402,7 @@ def _resolve_duplicate(
     loop: AgentLoop, capture_id: str, is_duplicate: bool, note: str | None = None
 ) -> None:
     cap = _require_escalated(loop, capture_id)
-    if cap.review_reason != "suspected_duplicate":
+    if not _suspected_duplicate(cap):
         raise RuntimeError(f"{capture_id} was not escalated as a suspected duplicate")
     cap.record(
         "reviewer",
@@ -342,15 +421,43 @@ def _resolve_duplicate(
 def _require_escalated(loop: AgentLoop, capture_id: str) -> Capture:
     cap = loop.captures[capture_id]
     if cap.state != "escalated":
-        raise RuntimeError(f"{capture_id} is not awaiting review (state={cap.state!r})")
+        raise StateError(f"{capture_id} is not awaiting review (state={cap.state!r})")
     return cap
+
+
+def _suspected_duplicate(cap: Capture) -> bool:
+    # Read from the verdict as well as the escalation's label, so the duplicate question
+    # stands on what the measurements decided, not only on what the escalate call said.
+    by_verdict = cap.verdict is not None and cap.verdict.rule_id == "suspected_duplicate"
+    return by_verdict or cap.review_reason == "suspected_duplicate"
 
 
 # ---- reads: no actor restriction, no trace entry ----------------------------------------
 
 
-def _get_capture(loop: AgentLoop, capture_id: str) -> Capture:
-    return loop.captures[capture_id]
+def capture_view(cap: Capture) -> dict[str, Any]:
+    """The one JSON-ready shape a capture takes outside this module — HTTP, MCP and the
+    ``get_capture`` read tool all return it. Built fresh from the record on every call, so
+    editing it edits nothing here. Never includes ``image_path``: a local filesystem
+    detail, not evidence."""
+    requests = [e for e in cap.trace if e.action == "request_recapture"]
+    successor_id = requests[-1].outputs["successor_id"] if requests else None
+    return {
+        "capture_id": cap.capture_id,
+        "batch_id": cap.batch_id,
+        "parent_id": cap.parent_id,
+        "attempt": cap.attempt,
+        "state": cap.state,
+        "review_reason": cap.review_reason,
+        "duplicate_resolved": cap.duplicate_resolved,
+        "successor_id": successor_id,
+        "measurements": cap.measurements.to_dict() if cap.measurements else None,
+        "verdict": cap.verdict.to_dict() if cap.verdict else None,
+    }
+
+
+def _get_capture(loop: AgentLoop, capture_id: str) -> dict[str, Any]:
+    return capture_view(loop.captures[capture_id])
 
 
 def _get_trace(loop: AgentLoop, capture_id: str) -> list[dict[str, Any]]:
@@ -406,7 +513,8 @@ def process_capture(capture_id: str, *, loop: AgentLoop | None = None) -> Captur
     that is `"awaiting_retake"`, `"escalated"`, `"accepted"` or `"rejected"` it is a no-op
     — that is the literal mechanism behind "an escalation waits for approval": once
     `escalate` has run, nothing in this module advances the capture again until a human's
-    `invoke()` call does.
+    `invoke()` call does. Calling the agent tools directly does not route around it either:
+    each one refuses a capture outside `AGENT_STATES` (see `_agent_capture`).
     """
     loop = loop or default_loop()
     cap = loop.captures[capture_id]
